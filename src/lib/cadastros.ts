@@ -1,7 +1,6 @@
 //crm/src/lib/cadastros.ts
 
 import type { Opcao } from "@/components/SearchSelect";
-
 import {
   carregarCadastrosCRM,
   type CadastrosCRM,
