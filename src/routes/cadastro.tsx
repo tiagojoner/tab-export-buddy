@@ -1,24 +1,18 @@
 //crm/src/routes/cadastro.tsx
 
 import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Eraser, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { SearchSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  excluirTabulacaoCRM,
-  inserirTabulacaoCRM,
-  listarRecentesCRM,
-  type TabulacaoCRM,
-} from "@/lib/crm.functions";
-import { carregarCadastros, permitidos } from "@/lib/cadastros";
-import type { Identidade } from "@/lib/session";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +23,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { carregarCadastros, permitidos } from "@/lib/cadastros";
+import {
+  excluirTabulacaoCRM,
+  inserirTabulacaoCRM,
+  listarTabulacoesCRM,
+  type FiltrosTabulacoesCRM,
+  type TabulacaoCRM,
+} from "@/lib/crm.functions";
+import type { Identidade } from "@/lib/session";
 
 export const Route = createFileRoute("/cadastro")({
   head: () => ({
@@ -72,12 +77,29 @@ const vazio: Form = {
   criticidade: null,
 };
 
+const filtrosCadastro: FiltrosTabulacoesCRM = {
+  canal: null,
+  origem: null,
+  tipo: null,
+  assunto: null,
+  subassunto: null,
+  area: null,
+  detalhe: null,
+  criticidade: null,
+  usuario: null,
+  setor: "",
+  status: "ativas",
+};
+
 function Cadastro({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<Form>(vazio);
   const [saving, setSaving] = useState(false);
   const [del, setDel] = useState<TabulacaoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [duplicada, setDuplicada] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
 
   const cadastros = useQuery({
     queryKey: ["cadastros"],
@@ -137,11 +159,33 @@ function Cadastro({ id }: { id: Identidade }) {
     }
   }, [opts, cad, form]);
 
-  const recentes = useQuery({
-    queryKey: ["recentes", id.usuarioId],
-    queryFn: listarRecentesCRM,
+  useEffect(() => {
+    setPage(0);
+  }, [pageSize]);
+
+  const tabulacoes = useQuery({
+    queryKey: ["cadastro-registros", id.usuarioId, page, pageSize],
+    placeholderData: keepPreviousData,
     retry: 1,
+    queryFn: () =>
+      listarTabulacoesCRM({
+        data: {
+          somenteMinhas: true,
+          filtros: filtrosCadastro,
+          page,
+          pageSize,
+        },
+      }),
   });
+
+  const total = tabulacoes.data?.count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    if (page > 0 && page >= pages) {
+      setPage(pages - 1);
+    }
+  }, [page, pages]);
 
   const obrigatoriosPreenchidos =
     form.canal != null &&
@@ -160,7 +204,7 @@ function Cadastro({ id }: { id: Identidade }) {
     setSaving(true);
 
     try {
-      await inserirTabulacaoCRM({
+      const resultado = await inserirTabulacaoCRM({
         data: {
           canal: form.canal!,
           origem: form.origem!,
@@ -173,12 +217,19 @@ function Cadastro({ id }: { id: Identidade }) {
         },
       });
 
+      if (resultado.status === "duplicada") {
+        setDuplicada(true);
+        return;
+      }
+
       toast.success("Tabulação adicionada com sucesso.");
+      setPage(0);
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["recentes"] }),
+        queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
         queryClient.invalidateQueries({ queryKey: ["registros"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
       ]);
     } catch (error) {
       console.error(error);
@@ -201,9 +252,10 @@ function Cadastro({ id }: { id: Identidade }) {
       setDel(null);
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["recentes"] }),
+        queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
         queryClient.invalidateQueries({ queryKey: ["registros"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
       ]);
     } catch (error) {
       console.error(error);
@@ -273,7 +325,7 @@ function Cadastro({ id }: { id: Identidade }) {
       <div>
         <h1 className="text-xl font-semibold">Cadastro de Tabulações</h1>
         <p className="text-sm text-muted-foreground">
-          {recentes.data?.count ?? 0} tabulação(ões) ativa(s) cadastrada(s) por você.
+          {total} tabulação(ões) ativa(s) cadastrada(s) por você.
         </p>
       </div>
 
@@ -330,24 +382,45 @@ function Cadastro({ id }: { id: Identidade }) {
       </div>
 
       <div className="rounded-xl border bg-card p-4 md:p-6">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="font-semibold">Últimas tabulações</h2>
-          <Link to="/registros" className="text-sm text-primary hover:underline">
-            Ver todos os registros
-          </Link>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Últimas tabulações</h2>
+            <p className="text-sm text-muted-foreground">
+              {tabulacoes.isFetching ? "Atualizando..." : `${total} registro(s) ativo(s)`}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Por página</span>
+              <select
+                className="h-8 rounded-md border border-input bg-card px-2"
+                value={pageSize}
+                onChange={(event) => setPageSize(Number(event.target.value))}
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+
+            <Link to="/registros" className="text-sm text-primary hover:underline">
+              Ver todos os registros
+            </Link>
+          </div>
         </div>
 
-        {recentes.isError ? (
+        {tabulacoes.isError ? (
           <p className="text-sm text-destructive">
-            Não foi possível carregar suas últimas tabulações.
+            Não foi possível carregar suas tabulações.
           </p>
-        ) : recentes.isLoading ? (
+        ) : tabulacoes.isLoading ? (
           <div className="flex justify-center py-10">
             <Loader2 className="animate-spin text-primary" />
           </div>
-        ) : recentes.data?.rows.length ? (
+        ) : tabulacoes.data?.rows.length ? (
           <TabulacoesTable
-            rows={recentes.data.rows}
+            rows={tabulacoes.data.rows}
             usuarioAtualId={id.usuarioId}
             onExcluir={setDel}
             mostrarAuditoriaExclusao={false}
@@ -357,7 +430,54 @@ function Cadastro({ id }: { id: Identidade }) {
             Nenhuma tabulação cadastrada ainda.
           </p>
         )}
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">Total: {total} registro(s)</span>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => setPage((current) => current - 1)}
+            >
+              Anterior
+            </Button>
+
+            <span>
+              Página {page + 1} de {pages}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page + 1 >= pages}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Próxima
+            </Button>
+          </div>
+        </div>
       </div>
+
+      <AlertDialog open={duplicada} onOpenChange={setDuplicada}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tabulação já cadastrada</AlertDialogTitle>
+            <AlertDialogDescription>
+              Já existe uma tabulação ativa com a mesma combinação de Canal,
+              Origem, Tipo, Assunto, Subassunto, Área de Interesse, Detalhe da
+              Ocorrência e Grau de Criticidade para o seu usuário e setor. Nenhum
+              novo registro foi criado e os campos selecionados foram mantidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setDuplicada(false)}>
+              Entendi
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!del} onOpenChange={(open) => !open && setDel(null)}>
         <AlertDialogContent>
