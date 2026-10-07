@@ -1,29 +1,51 @@
+//crm/src/routes/registros.tsx
+
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
-import { Loader2, Trash2, ArrowUpDown } from "lucide-react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+
 import { AppShell } from "@/components/AppShell";
 import { ExportButton } from "@/components/ExportButton";
 import { SearchSelect } from "@/components/SearchSelect";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TabulacoesTable } from "@/components/TabulacoesTable";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { carregarCadastros } from "@/lib/cadastros";
+import {
+  excluirTabulacaoCRM,
+  listarTabulacoesCRM,
+  listarUsuariosSetoresCRM,
+  type FiltrosTabulacoesCRM,
+  type StatusTabulacao,
+  type TabulacaoCRM,
+} from "@/lib/crm.functions";
 import type { Identidade } from "@/lib/session";
 
 export const Route = createFileRoute("/registros")({
   head: () => ({
     meta: [
       { title: "Tabulações Registradas — Gestor de Tabulações CRM" },
-      { name: "description", content: "Consulte, filtre e exporte as tabulações registradas." },
+      {
+        name: "description",
+        content: "Consulte, filtre e exporte as tabulações registradas.",
+      },
       { property: "og:title", content: "Tabulações Registradas" },
-      { property: "og:description", content: "Consulte, filtre e exporte as tabulações registradas." },
+      {
+        property: "og:description",
+        content: "Consulte, filtre e exporte as tabulações registradas.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
@@ -31,146 +53,328 @@ export const Route = createFileRoute("/registros")({
   component: () => <AppShell>{(id) => <Registros id={id} />}</AppShell>,
 });
 
-const PAGE = 25;
-type Filtros = { canal: number | null; origem: number | null; tipo: number | null; assunto: number | null; crit: number | null };
+const filtrosIniciais: FiltrosTabulacoesCRM = {
+  canal: null,
+  origem: null,
+  tipo: null,
+  assunto: null,
+  subassunto: null,
+  area: null,
+  detalhe: null,
+  criticidade: null,
+  usuario: null,
+  setor: "",
+  status: "ativas",
+};
 
 function Registros({ id }: { id: Identidade }) {
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<"minhas" | "todas">("minhas");
-  const [busca, setBusca] = useState("");
-  const [buscaDeb, setBuscaDeb] = useState("");
-  const [setor, setSetor] = useState("");
-  const [usuario, setUsuario] = useState("");
-  const [fl, setFl] = useState<Filtros>({ canal: null, origem: null, tipo: null, assunto: null, crit: null });
-  const [asc, setAsc] = useState(false);
+  const [filtros, setFiltros] = useState<FiltrosTabulacoesCRM>(filtrosIniciais);
   const [page, setPage] = useState(0);
-  const [del, setDel] = useState<{ id: number; assunto: string } | null>(null);
+  const [pageSize, setPageSize] = useState(50);
+  const [del, setDel] = useState<TabulacaoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => { const t = setTimeout(() => setBuscaDeb(busca), 350); return () => clearTimeout(t); }, [busca]);
-  useEffect(() => setPage(0), [view, buscaDeb, setor, usuario, fl, asc]);
-
-  const { data: cad } = useQuery({ queryKey: ["cadastros"], queryFn: carregarCadastros, staleTime: 5 * 60_000 });
-
-  const q = useQuery({
-    queryKey: ["registros", view, id, buscaDeb, setor, usuario, fl, asc, page],
-    placeholderData: keepPreviousData,
-    queryFn: async () => {
-      let r = supabase.from("vw_tabulacoes").select("*", { count: "exact" });
-      if (view === "minhas") r = r.eq("nome_usuario", id.nome).eq("setor_usuario", id.setor);
-      else {
-        if (setor.trim()) r = r.ilike("setor_usuario", `%${setor.trim()}%`);
-        if (usuario.trim()) r = r.ilike("nome_usuario", `%${usuario.trim()}%`);
-      }
-      if (fl.canal) r = r.eq("canal_id", fl.canal);
-      if (fl.origem) r = r.eq("origem_id", fl.origem);
-      if (fl.tipo) r = r.eq("tipo_ocorrencia_id", fl.tipo);
-      if (fl.assunto) r = r.eq("assunto_id", fl.assunto);
-      if (fl.crit) r = r.eq("criticidade_id", fl.crit);
-      const s = buscaDeb.trim().replace(/[,()%*]/g, " ");
-      if (s) {
-        const p = `%${s}%`;
-        r = r.or(["canal", "origem", "tipo_ocorrencia", "assunto", "subassunto", "area_interesse", "detalhe_ocorrencia", "criticidade", "nome_usuario", "setor_usuario"].map((c) => `${c}.ilike.${p}`).join(","));
-      }
-      const { data, error, count } = await r
-        .order("data_hora_inclusao", { ascending: asc }).order("id_registro", { ascending: asc })
-        .range(page * PAGE, page * PAGE + PAGE - 1);
-      if (error) throw error;
-      return { rows: data ?? [], count: count ?? 0 };
-    },
+  const cadastros = useQuery({
+    queryKey: ["cadastros"],
+    queryFn: carregarCadastros,
+    staleTime: 5 * 60_000,
   });
+
+  const filtrosAuxiliares = useQuery({
+    queryKey: ["filtros-usuarios-setores"],
+    queryFn: listarUsuariosSetoresCRM,
+    staleTime: 5 * 60_000,
+    enabled: view === "todas",
+  });
+
+  useEffect(() => {
+    setPage(0);
+  }, [view, filtros, pageSize]);
+
+  const query = useQuery({
+    queryKey: ["registros", view, filtros, page, pageSize],
+    placeholderData: keepPreviousData,
+    queryFn: () =>
+      listarTabulacoesCRM({
+        data: {
+          somenteMinhas: view === "minhas",
+          filtros,
+          page,
+          pageSize,
+        },
+      }),
+  });
+
+  const usuarios = useMemo(
+    () =>
+      (filtrosAuxiliares.data?.usuarios ?? []).map((usuario) => ({
+        id: usuario.id,
+        nome: usuario.ativo ? usuario.nome : `${usuario.nome} (inativo)`,
+      })),
+    [filtrosAuxiliares.data],
+  );
 
   async function excluir() {
     if (!del) return;
+
     setDeleting(true);
-    const { error } = await supabase.rpc("excluir_tabulacao", { p_id: del.id });
-    setDeleting(false);
-    setDel(null);
-    if (error) { toast.error("Não foi possível excluir."); return; }
-    toast.success("Registro excluído.");
-    qc.invalidateQueries({ queryKey: ["registros"] });
-    qc.invalidateQueries({ queryKey: ["recentes"] });
+
+    try {
+      await excluirTabulacaoCRM({ data: { id: del.id_registro } });
+      toast.success("Registro marcado como excluído.");
+      setDel(null);
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["registros"] }),
+        queryClient.invalidateQueries({ queryKey: ["recentes"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+      ]);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível excluir.",
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  const total = q.data?.count ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE));
-  const setF = (k: keyof Filtros) => (v: number | null) => setFl((p) => ({ ...p, [k]: v }));
+  function setFiltro<K extends keyof FiltrosTabulacoesCRM>(
+    key: K,
+    value: FiltrosTabulacoesCRM[K],
+  ) {
+    setFiltros((current) => ({ ...current, [key]: value }));
+  }
+
+  function trocarView(value: string) {
+    setView(value as "minhas" | "todas");
+    setFiltros((current) => ({
+      ...current,
+      setor: "",
+      usuario: null,
+    }));
+  }
+
+  const total = query.data?.count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const cad = cadastros.data;
+
+  useEffect(() => {
+    if (page > 0 && page >= pages) {
+      setPage(pages - 1);
+    }
+  }, [page, pages]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">Tabulações Registradas</h1>
-        {view === "minhas" && <ExportButton />}
+        <div>
+          <h1 className="text-xl font-semibold">Tabulações Registradas</h1>
+          <p className="text-sm text-muted-foreground">
+            Consulte registros ativos e excluídos. Registros excluídos nunca são exportados.
+          </p>
+        </div>
+
+        <ExportButton somenteMinhas={view === "minhas"} filtros={filtros} />
       </div>
-      <Tabs value={view} onValueChange={(v) => setView(v as "minhas" | "todas")}>
-        <TabsList><TabsTrigger value="minhas">Minhas Tabulações</TabsTrigger><TabsTrigger value="todas">Todas as Tabulações</TabsTrigger></TabsList>
+
+      <Tabs value={view} onValueChange={trocarView}>
+        <TabsList>
+          <TabsTrigger value="minhas">Minhas Tabulações</TabsTrigger>
+          <TabsTrigger value="todas">Todas as Tabulações</TabsTrigger>
+        </TabsList>
       </Tabs>
 
-      <div className="grid gap-3 rounded-xl border bg-card p-4 md:grid-cols-3 lg:grid-cols-4">
-        <Input placeholder="Pesquisar texto..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-        {view === "todas" && <>
-          <Input placeholder="Filtrar por setor" value={setor} onChange={(e) => setSetor(e.target.value)} />
-          <Input placeholder="Filtrar por usuário" value={usuario} onChange={(e) => setUsuario(e.target.value)} />
-        </>}
-        {cad && <>
-          <SearchSelect placeholder="Canal" options={cad.canal} value={fl.canal} onChange={setF("canal")} clearable />
-          <SearchSelect placeholder="Origem" options={cad.origem} value={fl.origem} onChange={setF("origem")} clearable />
-          <SearchSelect placeholder="Tipo de Ocorrência" options={cad.tipo} value={fl.tipo} onChange={setF("tipo")} clearable />
-          <SearchSelect placeholder="Assunto" options={cad.assunto} value={fl.assunto} onChange={setF("assunto")} clearable />
-          <SearchSelect placeholder="Criticidade" options={cad.criticidade} value={fl.crit} onChange={setF("crit")} clearable />
-        </>}
+      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        {cad && (
+          <>
+            <SearchSelect
+              placeholder="Canal"
+              options={cad.canal}
+              value={filtros.canal}
+              onChange={(value) => setFiltro("canal", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Origem"
+              options={cad.origem}
+              value={filtros.origem}
+              onChange={(value) => setFiltro("origem", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Tipo de Ocorrência"
+              options={cad.tipo}
+              value={filtros.tipo}
+              onChange={(value) => setFiltro("tipo", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Assunto"
+              options={cad.assunto}
+              value={filtros.assunto}
+              onChange={(value) => setFiltro("assunto", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Subassunto"
+              options={cad.subassunto}
+              value={filtros.subassunto}
+              onChange={(value) => setFiltro("subassunto", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Área de Interesse"
+              options={cad.area}
+              value={filtros.area}
+              onChange={(value) => setFiltro("area", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Detalhe da Ocorrência"
+              options={cad.detalhe}
+              value={filtros.detalhe}
+              onChange={(value) => setFiltro("detalhe", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Grau de Criticidade"
+              options={cad.criticidade}
+              value={filtros.criticidade}
+              onChange={(value) => setFiltro("criticidade", value)}
+              clearable
+            />
+          </>
+        )}
+
+        {view === "todas" && (
+          <>
+            <select
+              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
+              value={filtros.setor}
+              onChange={(event) => setFiltro("setor", event.target.value)}
+              aria-label="Filtrar por setor"
+            >
+              <option value="">Todos os setores</option>
+              {(filtrosAuxiliares.data?.setores ?? []).map((setor) => (
+                <option key={setor} value={setor}>
+                  {setor}
+                </option>
+              ))}
+            </select>
+
+            <SearchSelect
+              placeholder="Usuário"
+              options={usuarios}
+              value={filtros.usuario}
+              onChange={(value) => setFiltro("usuario", value)}
+              clearable
+            />
+          </>
+        )}
+
+        <select
+          className="h-10 rounded-md border border-input bg-card px-3 text-sm"
+          value={filtros.status}
+          onChange={(event) =>
+            setFiltro("status", event.target.value as StatusTabulacao)
+          }
+          aria-label="Status dos registros"
+        >
+          <option value="ativas">Ativas</option>
+          <option value="excluidas">Excluídas</option>
+          <option value="todas">Ativas e excluídas</option>
+        </select>
+
+        <Button variant="outline" onClick={() => setFiltros({ ...filtrosIniciais })}>
+          Limpar filtros
+        </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border bg-card">
-        <table className="w-full min-w-[1200px] text-sm">
-          <thead className="bg-secondary text-left text-secondary-foreground">
-            <tr>
-              {["Canal", "Origem", "Tipo de Ocorrência", "Assunto", "Subassunto", "Área de Interesse", "Detalhe da Ocorrência", "Grau de Criticidade", "ID do Registro"].map((h) => <th key={h} className="px-3 py-2 font-medium">{h}</th>)}
-              <th className="px-3 py-2 font-medium">
-                <button className="flex items-center gap-1" onClick={() => setAsc((a) => !a)}>Data e Hora da Inclusão <ArrowUpDown className="size-3" /></button>
-              </th>
-              <th className="px-3 py-2 font-medium">Nome do Usuário</th><th className="px-3 py-2 font-medium">Setor</th><th />
-            </tr>
-          </thead>
-          <tbody>
-            {q.isLoading && <tr><td colSpan={13} className="py-10 text-center"><Loader2 className="mx-auto animate-spin text-primary" /></td></tr>}
-            {!q.isLoading && q.data?.rows.length === 0 && <tr><td colSpan={13} className="py-10 text-center text-muted-foreground">Nenhum registro encontrado.</td></tr>}
-            {q.data?.rows.map((r) => (
-              <tr key={r.id_registro} className="border-t">
-                <td className="px-3 py-2">{r.canal}</td><td className="px-3 py-2">{r.origem}</td><td className="px-3 py-2">{r.tipo_ocorrencia}</td>
-                <td className="px-3 py-2">{r.assunto}</td><td className="px-3 py-2">{r.subassunto ?? "—"}</td><td className="px-3 py-2">{r.area_interesse}</td>
-                <td className="px-3 py-2">{r.detalhe_ocorrencia ?? "—"}</td><td className="px-3 py-2">{r.criticidade}</td><td className="px-3 py-2">{r.id_registro}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{r.data_hora_inclusao ? new Date(r.data_hora_inclusao).toLocaleString("pt-BR") : ""}</td>
-                <td className="px-3 py-2">{r.nome_usuario}</td><td className="px-3 py-2">{r.setor_usuario}</td>
-                <td className="px-3 py-2">
-                  <Button variant="ghost" size="icon" aria-label="Excluir" onClick={() => setDel({ id: r.id_registro!, assunto: r.assunto ?? "" })}>
-                    <Trash2 className="text-destructive" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="text-muted-foreground">
+          {query.isFetching ? "Atualizando..." : `${total} registro(s) encontrado(s)`}
+        </div>
+
+        <label className="flex items-center gap-2">
+          <span className="text-muted-foreground">Por página</span>
+          <select
+            className="h-8 rounded-md border border-input bg-card px-2"
+            value={pageSize}
+            onChange={(event) => setPageSize(Number(event.target.value))}
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+        </label>
       </div>
+
+      {query.isLoading ? (
+        <div className="flex justify-center rounded-xl border bg-card py-20">
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      ) : query.isError ? (
+        <div className="rounded-xl border bg-card p-6 text-sm text-destructive">
+          Não foi possível consultar os registros no PostgreSQL.
+        </div>
+      ) : query.data?.rows.length ? (
+        <TabulacoesTable
+          rows={query.data.rows}
+          usuarioAtualId={id.usuarioId}
+          onExcluir={setDel}
+        />
+      ) : (
+        <div className="rounded-xl border bg-card py-10 text-center text-sm text-muted-foreground">
+          Nenhum registro encontrado com os filtros atuais.
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="text-muted-foreground">Total: {total} registro(s)</span>
+
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Anterior</Button>
-          <span>Página {page + 1} de {pages}</span>
-          <Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>Próxima</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 0}
+            onClick={() => setPage((current) => current - 1)}
+          >
+            Anterior
+          </Button>
+
+          <span>
+            Página {page + 1} de {pages}
+          </span>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page + 1 >= pages}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            Próxima
+          </Button>
         </div>
       </div>
 
-      <AlertDialog open={!!del} onOpenChange={(o) => !o && setDel(null)}>
+      <AlertDialog open={!!del} onOpenChange={(open) => !open && setDel(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir tabulação?</AlertDialogTitle>
-            <AlertDialogDescription>Assunto: <b>{del?.assunto}</b> — ID do registro: <b>{del?.id}</b>. Esta ação não pode ser desfeita.</AlertDialogDescription>
+            <AlertDialogTitle>Excluir esta tabulação?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O registro será marcado como excluído e deixará de ser considerado no
+              Dashboard e nas exportações. ID: <b>{del?.id_registro}</b>.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={excluir} disabled={deleting}>Excluir</AlertDialogAction>
+            <AlertDialogAction onClick={excluir} disabled={deleting}>
+              {deleting ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
