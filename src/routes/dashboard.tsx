@@ -2,14 +2,22 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { Loader2 } from "lucide-react";
+import {
+  Building2,
+  CircleAlert,
+  Database,
+  Loader2,
+  Users,
+  UserRoundCheck,
+} from "lucide-react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { Button } from "@/components/ui/button";
 import {
-  carregarDashboardCRM,
-  type DashboardGrupoCRM,
-  type DashboardItemCRM,
+  carregarDashboardAdesaoCRM,
+  type DashboardSetorAdesaoCRM,
+  type DashboardUsuarioAdesaoCRM,
 } from "@/lib/crm.functions";
 
 export const Route = createFileRoute("/dashboard")({
@@ -18,12 +26,12 @@ export const Route = createFileRoute("/dashboard")({
       { title: "Dashboard — Gestor de Tabulações CRM" },
       {
         name: "description",
-        content: "Acompanhamento das tabulações ativas do CRM.",
+        content: "Acompanhamento da adesão de usuários e setores às tabulações do CRM.",
       },
       { property: "og:title", content: "Dashboard" },
       {
         property: "og:description",
-        content: "Acompanhamento das tabulações ativas do CRM.",
+        content: "Acompanhamento da adesão de usuários e setores às tabulações do CRM.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -32,150 +40,141 @@ export const Route = createFileRoute("/dashboard")({
   component: () => <AppShell>{() => <Dashboard />}</AppShell>,
 });
 
-const coresPastel = [
-  "#A8DADC",
-  "#F4B6C2",
-  "#B8E0D2",
-  "#FFD6A5",
-  "#CDB4DB",
-  "#BDE0FE",
-  "#FFCAD4",
-  "#D8E2DC",
-  "#E9C46A",
-  "#CDEAC0",
-  "#F6BD60",
-  "#B5EAD7",
-  "#FFDAC1",
-  "#C7CEEA",
-  "#E2F0CB",
-  "#F1C0E8",
-];
+type FiltroParticipacao = "todos" | "com" | "sem";
 
-function ordenar(data: DashboardItemCRM[]): DashboardItemCRM[] {
-  return [...data].sort(
-    (a, b) =>
-      b.quantidade - a.quantidade || a.rotulo.localeCompare(b.rotulo, "pt-BR"),
-  );
+function percentual(parte: number, total: number): string {
+  if (total <= 0) return "0%";
+
+  return `${new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format((parte / total) * 100)}%`;
 }
 
-function compactar(data: DashboardItemCRM[], max = 10): DashboardItemCRM[] {
-  const ordenado = ordenar(data);
+function formatarData(value: string | null, vazio = "Nunca cadastrou"): string {
+  if (!value) return vazio;
 
-  if (ordenado.length <= max) {
-    return ordenado;
-  }
-
-  const principais = ordenado.slice(0, max - 1);
-  const outros = ordenado
-    .slice(max - 1)
-    .reduce((soma, item) => soma + item.quantidade, 0);
-
-  return [
-    ...principais,
-    {
-      grupo: ordenado[0].grupo,
-      rotulo: "Outros",
-      quantidade: outros,
-    },
-  ];
+  return new Date(value).toLocaleString("pt-BR");
 }
 
-function GraficoPizza({
+function CardIndicador({
   titulo,
-  data,
-  mostrarZeros = false,
+  valor,
+  apoio,
+  icone,
+  previa,
+  acao,
+  onClick,
 }: {
   titulo: string;
-  data: DashboardItemCRM[];
-  mostrarZeros?: boolean;
+  valor: ReactNode;
+  apoio?: string;
+  icone: ReactNode;
+  previa?: string[];
+  acao?: string;
+  onClick?: () => void;
 }) {
-  const ordenado = ordenar(data);
-  const positivos = ordenado.filter((item) => item.quantidade > 0);
-  const visual = mostrarZeros ? positivos : compactar(positivos);
-  const legenda = mostrarZeros ? ordenado : visual;
+  const conteudo = (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm text-muted-foreground">{titulo}</div>
+          <div className="mt-1 text-2xl font-semibold text-primary">{valor}</div>
+          {apoio && <div className="mt-1 text-xs text-muted-foreground">{apoio}</div>}
+        </div>
+        <div className="rounded-lg bg-muted p-2 text-muted-foreground">{icone}</div>
+      </div>
 
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <h2 className="mb-3 font-semibold">{titulo}</h2>
-
-      {data.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Sem dados cadastrados.</p>
-      ) : (
-        <>
-          {visual.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={visual}
-                  dataKey="quantidade"
-                  nameKey="rotulo"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={105}
-                  labelLine={false}
-                  label={({ value }) => {
-                    const quantidade = Number(value ?? 0);
-                    return quantidade > 0 ? String(quantidade) : "";
-                  }}
-                >
-                  {visual.map((item, index) => (
-                    <Cell
-                      key={`${item.rotulo}-${index}`}
-                      fill={coresPastel[index % coresPastel.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => [Number(value ?? 0), "Registros"]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[180px] items-center justify-center text-sm text-muted-foreground">
-              Nenhum registro ativo para este agrupamento.
+      {previa && previa.length > 0 && (
+        <div className="mt-3 space-y-1 border-t pt-3 text-xs text-muted-foreground">
+          {previa.slice(0, 3).map((item) => (
+            <div key={item} className="truncate" title={item}>
+              {item}
             </div>
-          )}
-
-          <div className="mt-2 max-h-44 space-y-1 overflow-y-auto pr-1 text-xs">
-            {legenda.map((item, index) => (
-              <div
-                key={`${item.rotulo}-${index}`}
-                className="flex items-center justify-between gap-3 rounded px-1 py-0.5"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className="size-2.5 shrink-0 rounded-sm"
-                    style={{
-                      backgroundColor: coresPastel[index % coresPastel.length],
-                    }}
-                  />
-                  <span className="truncate" title={item.rotulo}>
-                    {item.rotulo}
-                  </span>
-                </div>
-                <span
-                  className={
-                    item.quantidade === 0
-                      ? "shrink-0 font-medium text-muted-foreground"
-                      : "shrink-0 font-medium"
-                  }
-                >
-                  {item.quantidade} registro(s)
-                </span>
-              </div>
-            ))}
-          </div>
-        </>
+          ))}
+          {previa.length > 3 && <div>+{previa.length - 3} outro(s)</div>}
+        </div>
       )}
-    </div>
+
+      {acao && (
+        <div className="mt-3 text-xs font-medium text-primary">{acao}</div>
+      )}
+    </>
   );
+
+  const classe =
+    "rounded-xl border bg-card p-4 text-left shadow-sm transition-colors";
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`${classe} w-full hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+      >
+        {conteudo}
+      </button>
+    );
+  }
+
+  return <div className={classe}>{conteudo}</div>;
 }
 
 function Dashboard() {
   const query = useQuery({
     queryKey: ["dashboard"],
-    queryFn: carregarDashboardCRM,
+    queryFn: carregarDashboardAdesaoCRM,
   });
+
+  const [filtroUsuarios, setFiltroUsuarios] =
+    useState<FiltroParticipacao>("todos");
+  const [filtroSetores, setFiltroSetores] =
+    useState<FiltroParticipacao>("todos");
+
+  const usuariosRef = useRef<HTMLDivElement>(null);
+  const setoresRef = useRef<HTMLDivElement>(null);
+
+  const usuariosFiltrados = useMemo(() => {
+    const usuarios = query.data?.usuarios ?? [];
+
+    if (filtroUsuarios === "com") {
+      return usuarios.filter((item) => item.quantidadeAtivas > 0);
+    }
+
+    if (filtroUsuarios === "sem") {
+      return usuarios.filter((item) => item.quantidadeAtivas === 0);
+    }
+
+    return usuarios;
+  }, [filtroUsuarios, query.data?.usuarios]);
+
+  const setoresFiltrados = useMemo(() => {
+    const setores = query.data?.setores ?? [];
+
+    if (filtroSetores === "com") {
+      return setores.filter((item) => item.usuariosParticipantes > 0);
+    }
+
+    if (filtroSetores === "sem") {
+      return setores.filter((item) => item.usuariosParticipantes === 0);
+    }
+
+    return setores;
+  }, [filtroSetores, query.data?.setores]);
+
+  function irParaUsuarios(filtro: FiltroParticipacao) {
+    setFiltroUsuarios(filtro);
+    requestAnimationFrame(() => {
+      usuariosRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function irParaSetores(filtro: FiltroParticipacao) {
+    setFiltroSetores(filtro);
+    requestAnimationFrame(() => {
+      setoresRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
 
   if (query.isLoading) {
     return (
@@ -188,84 +187,270 @@ function Dashboard() {
   if (query.isError || !query.data) {
     return (
       <div className="rounded-xl border bg-card p-6 text-sm text-destructive">
-        Não foi possível carregar o Dashboard no PostgreSQL.
+        Não foi possível carregar os indicadores de adesão no PostgreSQL.
       </div>
     );
   }
 
-  const grupos = new Map<DashboardGrupoCRM, DashboardItemCRM[]>();
-
-  for (const item of query.data) {
-    const atual = grupos.get(item.grupo) ?? [];
-    atual.push(item);
-    grupos.set(item.grupo, atual);
-  }
-
-  const resumo = new Map(
-    (grupos.get("resumo") ?? []).map((item) => [item.rotulo, item.quantidade]),
-  );
-
-  const Kpi = ({ label, value }: { label: string; value: number }) => (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-primary">{value}</div>
-    </div>
-  );
+  const { resumo, usuarios, setores } = query.data;
+  const usuariosSemCadastro = usuarios.filter((item) => item.quantidadeAtivas === 0);
+  const setoresSemCadastro = setores.filter((item) => item.usuariosParticipantes === 0);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">
-          Indicadores calculados somente sobre tabulações ativas.
+          Acompanhe a participação dos usuários e setores na construção das tabulações.
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi
-          label="Total de tabulações ativas"
-          value={resumo.get("total_ativas") ?? 0}
+      {(resumo.usuariosSemCadastro > 0 || resumo.setoresSemCadastro > 0) ? (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <CircleAlert className="mt-0.5 size-5 shrink-0" />
+          <div>
+            <div className="font-medium">Há participação pendente.</div>
+            <div className="mt-1">
+              {resumo.usuariosSemCadastro > 0 && (
+                <>
+                  {resumo.usuariosSemCadastro} usuário(s) ativo(s) ainda não possuem
+                  cadastro ativo.
+                </>
+              )}
+              {resumo.usuariosSemCadastro > 0 && resumo.setoresSemCadastro > 0 && " "}
+              {resumo.setoresSemCadastro > 0 && (
+                <>
+                  {resumo.setoresSemCadastro} setor(es) ainda não possuem nenhuma
+                  tabulação ativa.
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-950">
+          Todos os usuários e setores ativos já possuem participação no cadastramento.
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <CardIndicador
+          titulo="Tabulações ativas"
+          valor={resumo.totalAtivas}
+          apoio="Volume total atual da base."
+          icone={<Database className="size-5" />}
         />
-        <Kpi
-          label="Minhas tabulações"
-          value={resumo.get("minhas_tabulacoes") ?? 0}
+
+        <CardIndicador
+          titulo="Minhas tabulações"
+          valor={resumo.minhasTabulacoes}
+          apoio="Registros ativos do usuário logado."
+          icone={<UserRoundCheck className="size-5" />}
         />
-        <Kpi
-          label="Usuários com registros"
-          value={resumo.get("total_usuarios") ?? 0}
+
+        <CardIndicador
+          titulo="Usuários participantes"
+          valor={`${resumo.usuariosParticipantes} de ${resumo.usuariosAtivos}`}
+          apoio={`${percentual(
+            resumo.usuariosParticipantes,
+            resumo.usuariosAtivos,
+          )} dos usuários ativos`}
+          icone={<Users className="size-5" />}
+          acao="Ver usuários participantes"
+          onClick={() => irParaUsuarios("com")}
         />
-        <Kpi
-          label="Setores com registros"
-          value={resumo.get("total_setores") ?? 0}
+
+        <CardIndicador
+          titulo="Usuários sem cadastros"
+          valor={resumo.usuariosSemCadastro}
+          apoio="Usuários ativos com 0 tabulações ativas."
+          icone={<Users className="size-5" />}
+          previa={usuariosSemCadastro.map(
+            (item) => `${item.nomeUsuario} · ${item.setor}`,
+          )}
+          acao="Ver usuários sem cadastro"
+          onClick={() => irParaUsuarios("sem")}
+        />
+
+        <CardIndicador
+          titulo="Setores participantes"
+          valor={`${resumo.setoresParticipantes} de ${resumo.setoresAtivos}`}
+          apoio={`${percentual(
+            resumo.setoresParticipantes,
+            resumo.setoresAtivos,
+          )} dos setores com usuários ativos`}
+          icone={<Building2 className="size-5" />}
+          acao="Ver setores participantes"
+          onClick={() => irParaSetores("com")}
+        />
+
+        <CardIndicador
+          titulo="Setores sem cadastros"
+          valor={resumo.setoresSemCadastro}
+          apoio="Setores sem qualquer tabulação ativa."
+          icone={<Building2 className="size-5" />}
+          previa={setoresSemCadastro.map((item) => item.setor)}
+          acao="Ver setores sem cadastro"
+          onClick={() => irParaSetores("sem")}
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-        <GraficoPizza
-          titulo="Quantidade por setor"
-          data={grupos.get("setor") ?? []}
-          mostrarZeros
-        />
-        <GraficoPizza
-          titulo="Quantidade por usuário"
-          data={grupos.get("usuario") ?? []}
-          mostrarZeros
-        />
-        <GraficoPizza titulo="Quantidade por canal" data={grupos.get("canal") ?? []} />
-        <GraficoPizza titulo="Quantidade por origem" data={grupos.get("origem") ?? []} />
-        <GraficoPizza
-          titulo="Quantidade por tipo de ocorrência"
-          data={grupos.get("tipo_ocorrencia") ?? []}
-        />
-        <GraficoPizza titulo="Quantidade por assunto" data={grupos.get("assunto") ?? []} />
-        <GraficoPizza
-          titulo="Quantidade por criticidade"
-          data={grupos.get("criticidade") ?? []}
-        />
-        <GraficoPizza
-          titulo="Quantidade por área de interesse"
-          data={grupos.get("area_interesse") ?? []}
-        />
+      <div ref={usuariosRef} className="scroll-mt-4 rounded-xl border bg-card p-4 md:p-6">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Participação por usuário</h2>
+            <p className="text-sm text-muted-foreground">
+              Prioriza quem possui 0 registros e, depois, quem possui menor participação.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={filtroUsuarios === "todos" ? "default" : "outline"}
+              onClick={() => setFiltroUsuarios("todos")}
+            >
+              Todos
+            </Button>
+            <Button
+              size="sm"
+              variant={filtroUsuarios === "com" ? "default" : "outline"}
+              onClick={() => setFiltroUsuarios("com")}
+            >
+              Com cadastros
+            </Button>
+            <Button
+              size="sm"
+              variant={filtroUsuarios === "sem" ? "default" : "outline"}
+              onClick={() => setFiltroUsuarios("sem")}
+            >
+              Sem cadastros
+            </Button>
+          </div>
+        </div>
+
+        <div className="max-h-[460px] overflow-auto rounded-md border">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="sticky top-0 z-10 bg-muted">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-medium">Usuário</th>
+                <th className="px-3 py-2 font-medium">Setor</th>
+                <th className="px-3 py-2 text-right font-medium">Tabulações</th>
+                <th className="px-3 py-2 font-medium">Último cadastro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usuariosFiltrados.map((item: DashboardUsuarioAdesaoCRM) => (
+                <tr key={item.usuarioId} className="border-t">
+                  <td className="px-3 py-2 font-medium">{item.nomeUsuario}</td>
+                  <td className="px-3 py-2">{item.setor}</td>
+                  <td className="px-3 py-2 text-right">
+                    <span
+                      className={
+                        item.quantidadeAtivas === 0
+                          ? "font-semibold text-destructive"
+                          : "font-medium"
+                      }
+                    >
+                      {item.quantidadeAtivas}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {formatarData(item.ultimoCadastro)}
+                  </td>
+                </tr>
+              ))}
+              {usuariosFiltrados.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
+                    Nenhum usuário encontrado para este filtro.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div ref={setoresRef} className="scroll-mt-4 rounded-xl border bg-card p-4 md:p-6">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Participação por setor</h2>
+            <p className="text-sm text-muted-foreground">
+              Destaca primeiro os setores com maior quantidade de usuários sem cadastro.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant={filtroSetores === "todos" ? "default" : "outline"}
+              onClick={() => setFiltroSetores("todos")}
+            >
+              Todos
+            </Button>
+            <Button
+              size="sm"
+              variant={filtroSetores === "com" ? "default" : "outline"}
+              onClick={() => setFiltroSetores("com")}
+            >
+              Com cadastros
+            </Button>
+            <Button
+              size="sm"
+              variant={filtroSetores === "sem" ? "default" : "outline"}
+              onClick={() => setFiltroSetores("sem")}
+            >
+              Sem cadastros
+            </Button>
+          </div>
+        </div>
+
+        <div className="max-h-[460px] overflow-auto rounded-md border">
+          <table className="w-full min-w-[980px] text-sm">
+            <thead className="sticky top-0 z-10 bg-muted">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-medium">Setor</th>
+                <th className="px-3 py-2 text-right font-medium">Usuários</th>
+                <th className="px-3 py-2 text-right font-medium">Participantes</th>
+                <th className="px-3 py-2 text-right font-medium">Sem cadastro</th>
+                <th className="px-3 py-2 text-right font-medium">Tabulações</th>
+                <th className="px-3 py-2 font-medium">Último cadastro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {setoresFiltrados.map((item: DashboardSetorAdesaoCRM) => (
+                <tr key={item.setor} className="border-t">
+                  <td className="px-3 py-2 font-medium">{item.setor}</td>
+                  <td className="px-3 py-2 text-right">{item.totalUsuarios}</td>
+                  <td className="px-3 py-2 text-right">{item.usuariosParticipantes}</td>
+                  <td className="px-3 py-2 text-right">
+                    <span
+                      className={
+                        item.usuariosSemCadastro > 0
+                          ? "font-semibold text-destructive"
+                          : "font-medium"
+                      }
+                    >
+                      {item.usuariosSemCadastro}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">{item.totalTabulacoes}</td>
+                  <td className="px-3 py-2">
+                    {formatarData(item.ultimoCadastro, "Nenhum cadastro")}
+                  </td>
+                </tr>
+              ))}
+              {setoresFiltrados.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                    Nenhum setor encontrado para este filtro.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
