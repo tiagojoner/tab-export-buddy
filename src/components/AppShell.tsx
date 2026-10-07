@@ -72,7 +72,7 @@ export function AppShell({
   return (
     <div className="min-h-screen">
       <header className="border-b bg-card">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6 xl:px-8">
           <div className="font-semibold text-primary">
             Gestor de Tabulações CRM
           </div>
@@ -94,15 +94,14 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4">
+        <nav className="flex w-full gap-1 overflow-x-auto px-4 md:px-6 xl:px-8">
           {nav.map((item) => (
             <Link
               key={item.to}
               to={item.to}
               className="flex items-center gap-2 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
               activeProps={{
-                className:
-                  "!border-primary !text-primary font-medium",
+                className: "!border-primary !text-primary font-medium",
               }}
             >
               <item.icon className="size-4" />
@@ -112,9 +111,7 @@ export function AppShell({
         </nav>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6">
-        {children(id)}
-      </main>
+      <main className="w-full px-4 py-6 md:px-6 xl:px-8">{children(id)}</main>
     </div>
   );
 }
