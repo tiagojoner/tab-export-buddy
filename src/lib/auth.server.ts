@@ -16,15 +16,12 @@ export function lerChaveSessao(): string | null {
 }
 
 export function salvarChaveSessao(chave: string): void {
-  // Remove eventual cookie antigo criado quando o path era /crm.
   setCookie(COOKIE_NAME, "", {
     ...cookieBase,
     path: "/crm",
     maxAge: 0,
   });
 
-  // Server Functions são atendidas em /_serverFn.
-  // Portanto o cookie precisa estar disponível na raiz do domínio.
   setCookie(COOKIE_NAME, chave, {
     ...cookieBase,
     path: "/",
@@ -39,7 +36,6 @@ export function limparChaveSessao(): void {
     maxAge: 0,
   });
 
-  // Limpa também cookies da versão anterior.
   setCookie(COOKIE_NAME, "", {
     ...cookieBase,
     path: "/crm",
