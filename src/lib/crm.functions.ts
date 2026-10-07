@@ -102,21 +102,38 @@ export type TabulacaoExportacaoCRM = {
   data_hora_inclusao: string;
 };
 
-export type DashboardGrupoCRM =
-  | "resumo"
-  | "setor"
-  | "usuario"
-  | "canal"
-  | "origem"
-  | "tipo_ocorrencia"
-  | "assunto"
-  | "criticidade"
-  | "area_interesse";
+export type DashboardResumoAdesaoCRM = {
+  totalAtivas: number;
+  minhasTabulacoes: number;
+  usuariosAtivos: number;
+  usuariosParticipantes: number;
+  usuariosSemCadastro: number;
+  setoresAtivos: number;
+  setoresParticipantes: number;
+  setoresSemCadastro: number;
+};
 
-export type DashboardItemCRM = {
-  grupo: DashboardGrupoCRM;
-  rotulo: string;
-  quantidade: number;
+export type DashboardUsuarioAdesaoCRM = {
+  usuarioId: number;
+  nomeUsuario: string;
+  setor: string;
+  quantidadeAtivas: number;
+  ultimoCadastro: string | null;
+};
+
+export type DashboardSetorAdesaoCRM = {
+  setor: string;
+  totalUsuarios: number;
+  usuariosParticipantes: number;
+  usuariosSemCadastro: number;
+  totalTabulacoes: number;
+  ultimoCadastro: string | null;
+};
+
+export type DashboardAdesaoCRM = {
+  resumo: DashboardResumoAdesaoCRM;
+  usuarios: DashboardUsuarioAdesaoCRM[];
+  setores: DashboardSetorAdesaoCRM[];
 };
 
 type OpcaoRow = {
@@ -174,10 +191,32 @@ type TabulacaoExportacaoRow = {
   data_hora_inclusao: Date | string;
 };
 
-type DashboardRow = {
-  grupo: DashboardGrupoCRM;
-  rotulo: string;
-  quantidade: string;
+type DashboardResumoAdesaoRow = {
+  total_ativas: string;
+  minhas_tabulacoes: string;
+  usuarios_ativos: string;
+  usuarios_participantes: string;
+  usuarios_sem_cadastro: string;
+  setores_ativos: string;
+  setores_participantes: string;
+  setores_sem_cadastro: string;
+};
+
+type DashboardUsuarioAdesaoRow = {
+  usuario_id: string;
+  nome_usuario: string;
+  setor: string;
+  quantidade_ativas: string;
+  ultimo_cadastro: Date | string | null;
+};
+
+type DashboardSetorAdesaoRow = {
+  setor: string;
+  total_usuarios: string;
+  usuarios_participantes: string;
+  usuarios_sem_cadastro: string;
+  total_tabulacoes: string;
+  ultimo_cadastro: Date | string | null;
 };
 
 const filtrosVazios: FiltrosTabulacoesCRM = {
@@ -630,7 +669,7 @@ export const exportarTabulacoesCRM = createServerFn({
     return rows.map(mapExportacao);
   });
 
-export const carregarDashboardCRM = createServerFn({
+export const carregarDashboardAdesaoCRM = createServerFn({
   method: "GET",
 }).handler(async () => {
   setResponseHeader("Cache-Control", "no-store");
@@ -638,17 +677,73 @@ export const carregarDashboardCRM = createServerFn({
   const chave = exigirChave();
   const sql = getDb();
 
-  const rows = await sql<DashboardRow[]>`
-    SELECT grupo, rotulo, quantidade::text AS quantidade
-    FROM crm.dashboard_tabulacoes(${chave})
-  `;
+  const [resumoRows, usuariosRows, setoresRows] = await Promise.all([
+    sql<DashboardResumoAdesaoRow[]>`
+      SELECT
+        total_ativas::text AS total_ativas,
+        minhas_tabulacoes::text AS minhas_tabulacoes,
+        usuarios_ativos::text AS usuarios_ativos,
+        usuarios_participantes::text AS usuarios_participantes,
+        usuarios_sem_cadastro::text AS usuarios_sem_cadastro,
+        setores_ativos::text AS setores_ativos,
+        setores_participantes::text AS setores_participantes,
+        setores_sem_cadastro::text AS setores_sem_cadastro
+      FROM crm.dashboard_adesao_resumo(${chave})
+    `,
+    sql<DashboardUsuarioAdesaoRow[]>`
+      SELECT
+        usuario_id::text AS usuario_id,
+        nome_usuario,
+        setor,
+        quantidade_ativas::text AS quantidade_ativas,
+        ultimo_cadastro
+      FROM crm.dashboard_adesao_usuarios(${chave})
+    `,
+    sql<DashboardSetorAdesaoRow[]>`
+      SELECT
+        setor,
+        total_usuarios::text AS total_usuarios,
+        usuarios_participantes::text AS usuarios_participantes,
+        usuarios_sem_cadastro::text AS usuarios_sem_cadastro,
+        total_tabulacoes::text AS total_tabulacoes,
+        ultimo_cadastro
+      FROM crm.dashboard_adesao_setores(${chave})
+    `,
+  ]);
 
-  return rows.map(
-    (row) =>
-      ({
-        grupo: row.grupo,
-        rotulo: row.rotulo,
-        quantidade: Number(row.quantidade),
-      }) satisfies DashboardItemCRM,
-  );
+  const resumoRow = resumoRows[0];
+
+  const resumo: DashboardResumoAdesaoCRM = {
+    totalAtivas: Number(resumoRow?.total_ativas ?? 0),
+    minhasTabulacoes: Number(resumoRow?.minhas_tabulacoes ?? 0),
+    usuariosAtivos: Number(resumoRow?.usuarios_ativos ?? 0),
+    usuariosParticipantes: Number(resumoRow?.usuarios_participantes ?? 0),
+    usuariosSemCadastro: Number(resumoRow?.usuarios_sem_cadastro ?? 0),
+    setoresAtivos: Number(resumoRow?.setores_ativos ?? 0),
+    setoresParticipantes: Number(resumoRow?.setores_participantes ?? 0),
+    setoresSemCadastro: Number(resumoRow?.setores_sem_cadastro ?? 0),
+  };
+
+  const usuarios: DashboardUsuarioAdesaoCRM[] = usuariosRows.map((row) => ({
+    usuarioId: Number(row.usuario_id),
+    nomeUsuario: row.nome_usuario,
+    setor: row.setor,
+    quantidadeAtivas: Number(row.quantidade_ativas),
+    ultimoCadastro: dataIso(row.ultimo_cadastro),
+  }));
+
+  const setores: DashboardSetorAdesaoCRM[] = setoresRows.map((row) => ({
+    setor: row.setor,
+    totalUsuarios: Number(row.total_usuarios),
+    usuariosParticipantes: Number(row.usuarios_participantes),
+    usuariosSemCadastro: Number(row.usuarios_sem_cadastro),
+    totalTabulacoes: Number(row.total_tabulacoes),
+    ultimoCadastro: dataIso(row.ultimo_cadastro),
+  }));
+
+  return {
+    resumo,
+    usuarios,
+    setores,
+  } satisfies DashboardAdesaoCRM;
 });
