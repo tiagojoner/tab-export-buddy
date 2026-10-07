@@ -455,27 +455,38 @@ export const inserirTabulacaoCRM = createServerFn({
     const chave = exigirChave();
     const sql = getDb();
 
-    const rows = await sql<{ id: string }[]>`
-      SELECT crm.inserir_tabulacao(
-        ${chave},
-        ${data.canal},
-        ${data.origem},
-        ${data.tipo},
-        ${data.assunto},
-        ${data.subassunto},
-        ${data.area},
-        ${data.detalhe},
-        ${data.criticidade}
-      )::text AS id
-    `;
+    try {
+      const rows = await sql<{ id: string }[]>`
+        SELECT crm.inserir_tabulacao(
+          ${chave},
+          ${data.canal},
+          ${data.origem},
+          ${data.tipo},
+          ${data.assunto},
+          ${data.subassunto},
+          ${data.area},
+          ${data.detalhe},
+          ${data.criticidade}
+        )::text AS id
+      `;
 
-    const id = rows[0]?.id;
+      const id = rows[0]?.id;
 
-    if (!id) {
-      throw new Error("O PostgreSQL não retornou o ID da tabulação.");
+      if (!id) {
+        throw new Error("O PostgreSQL não retornou o ID da tabulação.");
+      }
+
+      return { status: "criada" as const, id: Number(id) };
+    } catch (error) {
+      const mensagem =
+        error instanceof Error ? error.message : String(error ?? "");
+
+      if (mensagem.includes("TABULACAO_DUPLICADA")) {
+        return { status: "duplicada" as const, id: null };
+      }
+
+      throw error;
     }
-
-    return { id: Number(id) };
   });
 
 export const listarRecentesCRM = createServerFn({
