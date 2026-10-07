@@ -332,23 +332,48 @@ function Cadastro({ id }: { id: Identidade }) {
       <div className="rounded-xl border bg-card p-6">
         <div className="grid gap-4 md:grid-cols-2">
           <Campo label="Canal" req>
-            <SearchSelect options={cad.canal} value={form.canal} onChange={set("canal")} />
+            <SearchSelect
+              options={cad.canal}
+              value={form.canal}
+              onChange={set("canal")}
+              clearable
+            />
           </Campo>
 
           <Campo label="Origem" req>
-            <SearchSelect options={opts.origem} value={form.origem} onChange={set("origem")} />
+            <SearchSelect
+              options={opts.origem}
+              value={form.origem}
+              onChange={set("origem")}
+              clearable
+            />
           </Campo>
 
           <Campo label="Tipo de Ocorrência" req>
-            <SearchSelect options={cad.tipo} value={form.tipo} onChange={set("tipo")} />
+            <SearchSelect
+              options={cad.tipo}
+              value={form.tipo}
+              onChange={set("tipo")}
+              clearable
+            />
           </Campo>
 
           <Campo label="Área de Interesse" req>
-            <SearchSelect options={opts.area} value={form.area} onChange={set("area")} />
+            <SearchSelect
+              options={opts.area}
+              value={form.area}
+              onChange={set("area")}
+              clearable
+            />
           </Campo>
 
           <Campo label="Assunto" req>
-            <SearchSelect options={opts.assunto} value={form.assunto} onChange={set("assunto")} />
+            <SearchSelect
+              options={opts.assunto}
+              value={form.assunto}
+              onChange={set("assunto")}
+              clearable
+            />
           </Campo>
 
           <Campo label="Subassunto">
@@ -364,6 +389,7 @@ function Cadastro({ id }: { id: Identidade }) {
               options={cad.criticidade}
               value={form.criticidade}
               onChange={set("criticidade")}
+              clearable
             />
           </Campo>
         </div>
@@ -466,9 +492,10 @@ function Cadastro({ id }: { id: Identidade }) {
             <AlertDialogTitle>Tabulação já cadastrada</AlertDialogTitle>
             <AlertDialogDescription>
               Já existe uma tabulação ativa com a mesma combinação de Canal,
-              Origem, Tipo, Assunto, Subassunto, Área de Interesse, Detalhe da
-              Ocorrência e Grau de Criticidade para o seu usuário e setor. Nenhum
-              novo registro foi criado e os campos selecionados foram mantidos.
+              Origem, Tipo, Assunto, Subassunto, Área de Interesse e Detalhe da
+              Ocorrência para o seu usuário. O Grau de Criticidade não diferencia
+              uma tabulação duplicada. Nenhum novo registro foi criado e os campos
+              selecionados foram mantidos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
