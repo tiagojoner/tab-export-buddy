@@ -1,5 +1,4 @@
 //crm/src/lib/crm.functions.ts
-
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseHeader } from "@tanstack/react-start/server";
 
@@ -24,13 +23,6 @@ export type CadastrosCRM = {
   area: OpcaoCRM[];
   detalhe: OpcaoCRM[];
   criticidade: CriticidadeCRM[];
-  rel: {
-    canalOrigem: [number, number][];
-    assuntoTipo: [number, number][];
-    assuntoSub: [number, number][];
-    assuntoArea: [number, number][];
-    subDetalhe: [number, number][];
-  };
 };
 
 export type StatusTabulacao = "ativas" | "excluidas" | "todas";
@@ -141,11 +133,6 @@ type OpcaoRow = {
   nome: string;
 };
 
-type RelacaoRow = {
-  tipo: string;
-  pai_id: string;
-  filho_id: string;
-};
 
 type TabulacaoRow = {
   id_registro: string;
@@ -399,7 +386,6 @@ export const carregarCadastrosCRM = createServerFn({
   setResponseHeader("Cache-Control", "no-store");
 
   const chave = exigirChave();
-  const sql = getDb();
 
   const [
     canal,
@@ -410,7 +396,6 @@ export const carregarCadastrosCRM = createServerFn({
     area,
     detalhe,
     criticidadeBase,
-    relacionamentos,
   ] = await Promise.all([
     listarOpcoes(chave, "canal"),
     listarOpcoes(chave, "origem"),
@@ -420,35 +405,7 @@ export const carregarCadastrosCRM = createServerFn({
     listarOpcoes(chave, "area_interesse"),
     listarOpcoes(chave, "detalhe_ocorrencia"),
     listarOpcoes(chave, "criticidade"),
-    sql<RelacaoRow[]>`
-      SELECT tipo, pai_id::text AS pai_id, filho_id::text AS filho_id
-      FROM crm.listar_relacionamentos(${chave})
-    `,
   ]);
-
-  const rel = {
-    canalOrigem: [] as [number, number][],
-    assuntoTipo: [] as [number, number][],
-    assuntoSub: [] as [number, number][],
-    assuntoArea: [] as [number, number][],
-    subDetalhe: [] as [number, number][],
-  };
-
-  for (const row of relacionamentos) {
-    const par: [number, number] = [Number(row.pai_id), Number(row.filho_id)];
-
-    if (row.tipo === "canal_origem") {
-      rel.canalOrigem.push(par);
-    } else if (row.tipo === "assunto_tipo") {
-      rel.assuntoTipo.push(par);
-    } else if (row.tipo === "assunto_sub") {
-      rel.assuntoSub.push(par);
-    } else if (row.tipo === "assunto_area") {
-      rel.assuntoArea.push(par);
-    } else if (row.tipo === "sub_detalhe") {
-      rel.subDetalhe.push(par);
-    }
-  }
 
   const sortNome = (a: OpcaoCRM, b: OpcaoCRM) =>
     a.nome.localeCompare(b.nome, "pt-BR");
@@ -469,7 +426,6 @@ export const carregarCadastrosCRM = createServerFn({
     area: area.sort(sortNome),
     detalhe: detalhe.sort(sortNome),
     criticidade,
-    rel,
   } satisfies CadastrosCRM;
 });
 
