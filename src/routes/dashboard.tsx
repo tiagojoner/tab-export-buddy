@@ -97,20 +97,23 @@ function CardIndicador({
       )}
 
       {acao && (
-        <div className="mt-3 text-xs font-medium text-primary">{acao}</div>
+        <div className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-primary underline decoration-primary/40 underline-offset-4 transition-colors group-hover:decoration-primary">
+          {acao}
+          <span aria-hidden="true">→</span>
+        </div>
       )}
     </>
   );
 
   const classe =
-    "rounded-xl border bg-card p-4 text-left shadow-sm transition-colors";
+    "group rounded-xl border bg-card p-4 text-left shadow-sm transition-all";
 
   if (onClick) {
     return (
       <button
         type="button"
         onClick={onClick}
-        className={`${classe} w-full hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+        className={`${classe} w-full cursor-pointer hover:border-primary/40 hover:bg-muted/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
       >
         {conteudo}
       </button>
@@ -122,7 +125,7 @@ function CardIndicador({
 
 function Dashboard() {
   const query = useQuery({
-    queryKey: ["dashboard"],
+    queryKey: ["dashboard-adesao"],
     queryFn: carregarDashboardAdesaoCRM,
   });
 
@@ -133,6 +136,10 @@ function Dashboard() {
 
   const usuariosRef = useRef<HTMLDivElement>(null);
   const setoresRef = useRef<HTMLDivElement>(null);
+  const [destaqueTabela, setDestaqueTabela] = useState<
+    "usuarios" | "setores" | null
+  >(null);
+  const destaqueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const usuariosFiltrados = useMemo(() => {
     const usuarios = query.data?.usuarios ?? [];
@@ -162,17 +169,44 @@ function Dashboard() {
     return setores;
   }, [filtroSetores, query.data?.setores]);
 
+  function destacarTabela(tipo: "usuarios" | "setores") {
+    if (destaqueTimerRef.current) {
+      clearTimeout(destaqueTimerRef.current);
+    }
+
+    setDestaqueTabela(tipo);
+
+    destaqueTimerRef.current = setTimeout(() => {
+      setDestaqueTabela(null);
+      destaqueTimerRef.current = null;
+    }, 1600);
+  }
+
   function irParaUsuarios(filtro: FiltroParticipacao) {
     setFiltroUsuarios(filtro);
+    destacarTabela("usuarios");
+
     requestAnimationFrame(() => {
-      usuariosRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      requestAnimationFrame(() => {
+        usuariosRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
     });
   }
 
   function irParaSetores(filtro: FiltroParticipacao) {
     setFiltroSetores(filtro);
+    destacarTabela("setores");
+
     requestAnimationFrame(() => {
-      setoresRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      requestAnimationFrame(() => {
+        setoresRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
     });
   }
 
@@ -295,7 +329,14 @@ function Dashboard() {
         />
       </div>
 
-      <div ref={usuariosRef} className="scroll-mt-4 rounded-xl border bg-card p-4 md:p-6">
+      <div
+        ref={usuariosRef}
+        className={`scroll-mt-4 rounded-xl border bg-card p-4 transition-all duration-300 md:p-6 ${
+          destaqueTabela === "usuarios"
+            ? "animate-pulse border-primary ring-2 ring-primary/50 ring-offset-2 shadow-lg"
+            : ""
+        }`}
+      >
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold">Participação por usuário</h2>
@@ -372,7 +413,14 @@ function Dashboard() {
         </div>
       </div>
 
-      <div ref={setoresRef} className="scroll-mt-4 rounded-xl border bg-card p-4 md:p-6">
+      <div
+        ref={setoresRef}
+        className={`scroll-mt-4 rounded-xl border bg-card p-4 transition-all duration-300 md:p-6 ${
+          destaqueTabela === "setores"
+            ? "animate-pulse border-primary ring-2 ring-primary/50 ring-offset-2 shadow-lg"
+            : ""
+        }`}
+      >
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-semibold">Participação por setor</h2>
