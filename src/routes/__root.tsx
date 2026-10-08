@@ -10,22 +10,24 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
+
         <h2 className="mt-4 text-xl font-semibold text-foreground">
           Página não encontrada
         </h2>
+
         <p className="mt-2 text-sm text-muted-foreground">
           A página que você procura não existe ou foi movida.
         </p>
+
         <div className="mt-6">
           <Link
             to="/"
@@ -39,15 +41,8 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ error, reset }: ErrorComponentProps) {
-  console.error(error);
+function ErrorComponent({ reset }: ErrorComponentProps) {
   const router = useRouter();
-
-  useEffect(() => {
-    reportLovableError(error, {
-      boundary: "tanstack_root_error_component",
-    });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -55,6 +50,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
           Não foi possível carregar esta página
         </h1>
+
         <p className="mt-2 text-sm text-muted-foreground">
           Ocorreu um erro inesperado. Tente novamente ou volte ao início.
         </p>
@@ -116,6 +112,7 @@ export const Route = createRootRouteWithContext<{
         content: "website",
       },
     ],
+
     links: [
       {
         rel: "stylesheet",
