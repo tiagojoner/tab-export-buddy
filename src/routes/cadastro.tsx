@@ -1,12 +1,11 @@
 //crm/src/routes/cadastro.tsx
-
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   keepPreviousData,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertCircle, Eraser, Loader2, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -25,7 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { carregarCadastros, permitidos } from "@/lib/cadastros";
+import { carregarCadastros } from "@/lib/cadastros";
 import {
   excluirTabulacaoCRM,
   inserirTabulacaoCRM,
@@ -125,20 +124,9 @@ function Cadastro({ id }: { id: Identidade }) {
     sessionStorage.setItem("gtc_form", JSON.stringify(form));
   }, [form]);
 
-  const opts = useMemo(() => {
-    if (!cad) return null;
-
-    return {
-      origem: permitidos(cad.origem, cad.rel.canalOrigem, form.canal, 0),
-      assunto: permitidos(cad.assunto, cad.rel.assuntoTipo, form.tipo, 1),
-      sub: permitidos(cad.subassunto, cad.rel.assuntoSub, form.assunto, 0),
-      area: permitidos(cad.area, cad.rel.assuntoArea, form.assunto, 0),
-      detalhe: permitidos(cad.detalhe, cad.rel.subDetalhe, form.sub, 0),
-    };
-  }, [cad, form.canal, form.tipo, form.assunto, form.sub]);
 
   useEffect(() => {
-    if (!opts || !cad) return;
+    if (!cad) return;
 
     const existe = (lista: { id: number }[], valor: number | null) =>
       valor == null || lista.some((item) => item.id === valor);
@@ -146,18 +134,18 @@ function Cadastro({ id }: { id: Identidade }) {
     const novo = { ...form };
 
     if (!existe(cad.canal, novo.canal)) novo.canal = null;
+    if (!existe(cad.origem, novo.origem)) novo.origem = null;
     if (!existe(cad.tipo, novo.tipo)) novo.tipo = null;
+    if (!existe(cad.assunto, novo.assunto)) novo.assunto = null;
+    if (!existe(cad.subassunto, novo.sub)) novo.sub = null;
+    if (!existe(cad.area, novo.area)) novo.area = null;
+    if (!existe(cad.detalhe, novo.detalhe)) novo.detalhe = null;
     if (!existe(cad.criticidade, novo.criticidade)) novo.criticidade = null;
-    if (!existe(opts.origem, novo.origem)) novo.origem = null;
-    if (!existe(opts.assunto, novo.assunto)) novo.assunto = null;
-    if (!existe(opts.sub, novo.sub)) novo.sub = null;
-    if (!existe(opts.area, novo.area)) novo.area = null;
-    if (!existe(opts.detalhe, novo.detalhe)) novo.detalhe = null;
 
     if (JSON.stringify(novo) !== JSON.stringify(form)) {
       setForm(novo);
     }
-  }, [opts, cad, form]);
+  }, [cad, form]);
 
   useEffect(() => {
     setPage(0);
@@ -275,7 +263,7 @@ function Cadastro({ id }: { id: Identidade }) {
     );
   }
 
-  if (cadastros.isError || !cad || !opts) {
+  if (cadastros.isError || !cad) {
     return (
       <div className="mx-auto max-w-xl rounded-xl border bg-card p-6">
         <div className="flex items-start gap-3">
@@ -342,7 +330,7 @@ function Cadastro({ id }: { id: Identidade }) {
 
           <Campo label="Origem" req>
             <SearchSelect
-              options={opts.origem}
+              options={cad.origem}
               value={form.origem}
               onChange={set("origem")}
               clearable
@@ -360,7 +348,7 @@ function Cadastro({ id }: { id: Identidade }) {
 
           <Campo label="Área de Interesse" req>
             <SearchSelect
-              options={opts.area}
+              options={cad.area}
               value={form.area}
               onChange={set("area")}
               clearable
@@ -369,7 +357,7 @@ function Cadastro({ id }: { id: Identidade }) {
 
           <Campo label="Assunto" req>
             <SearchSelect
-              options={opts.assunto}
+              options={cad.assunto}
               value={form.assunto}
               onChange={set("assunto")}
               clearable
@@ -377,11 +365,11 @@ function Cadastro({ id }: { id: Identidade }) {
           </Campo>
 
           <Campo label="Subassunto">
-            <SearchSelect options={opts.sub} value={form.sub} onChange={set("sub")} clearable />
+            <SearchSelect options={cad.subassunto} value={form.sub} onChange={set("sub")} clearable />
           </Campo>
 
           <Campo label="Detalhe da Ocorrência">
-            <SearchSelect options={opts.detalhe} value={form.detalhe} onChange={set("detalhe")} clearable />
+            <SearchSelect options={cad.detalhe} value={form.detalhe} onChange={set("detalhe")} clearable />
           </Campo>
 
           <Campo label="Grau de Criticidade" req>
