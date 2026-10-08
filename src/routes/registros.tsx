@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { ExportButton } from "@/components/ExportButton";
-import { SearchSelect } from "@/components/SearchSelect";
+import { SearchSelect, SearchTextSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
 import {
   AlertDialog,
@@ -114,6 +114,23 @@ function Registros({ id }: { id: Identidade }) {
         nome: usuario.ativo ? usuario.nome : `${usuario.nome} (inativo)`,
       })),
     [filtrosAuxiliares.data],
+  );
+
+  const setores = useMemo(
+    () =>
+      (filtrosAuxiliares.data?.setores ?? []).map((setor) => ({
+        id: setor,
+        nome: setor,
+      })),
+    [filtrosAuxiliares.data?.setores],
+  );
+
+  const statusOptions = useMemo(
+    () => [
+      { id: "ativas", nome: "Ativas" },
+      { id: "excluidas", nome: "Excluídas" },
+    ],
+    [],
   );
 
   async function excluir() {
@@ -252,19 +269,13 @@ function Registros({ id }: { id: Identidade }) {
 
         {view === "todas" && (
           <>
-            <select
-              className="h-10 rounded-md border border-input bg-card px-3 text-sm"
-              value={filtros.setor}
-              onChange={(event) => setFiltro("setor", event.target.value)}
-              aria-label="Filtrar por setor"
-            >
-              <option value="">Todos os setores</option>
-              {(filtrosAuxiliares.data?.setores ?? []).map((setor) => (
-                <option key={setor} value={setor}>
-                  {setor}
-                </option>
-              ))}
-            </select>
+            <SearchTextSelect
+              placeholder="Setor"
+              options={setores}
+              value={filtros.setor || null}
+              onChange={(value) => setFiltro("setor", value ?? "")}
+              clearable
+            />
 
             <SearchSelect
               placeholder="Usuário"
@@ -276,18 +287,15 @@ function Registros({ id }: { id: Identidade }) {
           </>
         )}
 
-        <select
-          className="h-10 rounded-md border border-input bg-card px-3 text-sm"
-          value={filtros.status}
-          onChange={(event) =>
-            setFiltro("status", event.target.value as StatusTabulacao)
+        <SearchTextSelect
+          placeholder="Ativas e excluídas"
+          options={statusOptions}
+          value={filtros.status === "todas" ? null : filtros.status}
+          onChange={(value) =>
+            setFiltro("status", (value ?? "todas") as StatusTabulacao)
           }
-          aria-label="Status dos registros"
-        >
-          <option value="ativas">Ativas</option>
-          <option value="excluidas">Excluídas</option>
-          <option value="todas">Ativas e excluídas</option>
-        </select>
+          clearable
+        />
 
         <Button variant="outline" onClick={() => setFiltros({ ...filtrosIniciais })}>
           Limpar filtros
