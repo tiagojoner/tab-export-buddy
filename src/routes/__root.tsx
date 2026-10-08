@@ -41,7 +41,9 @@ function NotFoundComponent() {
   );
 }
 
-function ErrorComponent({ reset }: ErrorComponentProps) {
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
+  console.error(error);
+
   const router = useRouter();
 
   return (
