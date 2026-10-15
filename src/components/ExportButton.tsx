@@ -12,9 +12,11 @@ import { useIdentidade } from "@/lib/session";
 export function ExportButton({
   somenteMinhas,
   filtros,
+  mostrarDetalhe,
 }: {
   somenteMinhas: boolean;
   filtros: FiltrosTabulacoesCRM;
+  mostrarDetalhe: boolean;
 }) {
   const [id] = useIdentidade();
   const [busy, setBusy] = useState(false);
@@ -34,20 +36,18 @@ export function ExportButton({
         id,
         somenteMinhas,
         filtros,
+        mostrarDetalhe,
       });
 
       if (n === 0) {
-        toast.info("Não há registros ativos para exportar com os filtros atuais.");
-      } else {
-        toast.success(`${n} tabulação(ões) ativa(s) exportada(s) com sucesso.`);
-
-        if (filtros.status === "todas") {
-          toast.info("Registros excluídos não são incluídos na exportação.");
-        }
+        toast.info("Nenhum registro ativo encontrado para exportação.");
+        return;
       }
+
+      toast.success(`${n} registro(s) exportado(s).`);
     } catch (error) {
-      toast.error("Não foi possível gerar o arquivo. Tente novamente.");
       console.error(error);
+      toast.error("Não foi possível gerar o arquivo Excel.");
     } finally {
       setBusy(false);
     }
@@ -56,7 +56,7 @@ export function ExportButton({
   return (
     <Button variant="outline" onClick={run} disabled={busy || !id}>
       {busy ? <Loader2 className="animate-spin" /> : <Download />}
-      Exportar resultados
+      Exportar Excel
     </Button>
   );
 }
