@@ -1,0 +1,192 @@
+//crm/src/lib/admin.functions.ts
+
+import { createServerFn } from "@tanstack/react-start";
+import { setResponseHeader } from "@tanstack/react-start/server";
+
+import { lerChaveSessao } from "./auth.server";
+import { getDb } from "./db.server";
+
+export type CadastroAdminTipo = "assunto" | "subassunto";
+
+export type CadastroAdminItem = {
+  id: number;
+  nome: string;
+  ativo: boolean;
+};
+
+type CadastroAdminRow = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+};
+
+type RelacionamentoRow = {
+  subassunto_id: string;
+};
+
+function exigirChave(): string {
+  const chave = lerChaveSessao();
+
+  if (!chave) {
+    throw new Error("Sessão expirada. Informe novamente sua chave de acesso.");
+  }
+
+  return chave;
+}
+
+export const carregarCadastrosAdminCRM = createServerFn({
+  method: "GET",
+}).handler(async () => {
+  setResponseHeader("Cache-Control", "no-store");
+
+  const chave = exigirChave();
+  const sql = getDb();
+
+  const [assuntosRows, subassuntosRows] = await Promise.all([
+    sql<CadastroAdminRow[]>`
+      SELECT id::text AS id, nome, ativo
+      FROM crm.listar_cadastro_admin(${chave}, 'assunto')
+    `,
+    sql<CadastroAdminRow[]>`
+      SELECT id::text AS id, nome, ativo
+      FROM crm.listar_cadastro_admin(${chave}, 'subassunto')
+    `,
+  ]);
+
+  const map = (row: CadastroAdminRow): CadastroAdminItem => ({
+    id: Number(row.id),
+    nome: row.nome,
+    ativo: Boolean(row.ativo),
+  });
+
+  return {
+    assuntos: assuntosRows.map(map),
+    subassuntos: subassuntosRows.map(map),
+  };
+});
+
+export const salvarCadastroAdminCRM = createServerFn({
+  method: "POST",
+})
+  .validator(
+    (data: {
+      cadastro: CadastroAdminTipo;
+      id: number | null;
+      nome: string;
+      ativo: boolean;
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    try {
+      const rows = await sql<{ id: string }[]>`
+        SELECT crm.salvar_cadastro_admin(
+          ${chave},
+          ${data.cadastro},
+          ${data.id},
+          ${data.nome},
+          ${data.ativo}
+        )::text AS id
+      `;
+
+      const id = rows[0]?.id;
+
+      if (!id) {
+        throw new Error("O PostgreSQL não retornou o ID do cadastro.");
+      }
+
+      return { ok: true, id: Number(id) };
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error ?? "");
+
+      if (mensagem.includes("CADASTRO_DUPLICADO")) {
+        return {
+          ok: false as const,
+          motivo: "duplicado" as const,
+        };
+      }
+
+      throw error;
+    }
+  });
+
+export const carregarRelacionamentosAssuntoAdminCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { assuntoId: number }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    const rows = await sql<RelacionamentoRow[]>`
+      SELECT subassunto_id::text AS subassunto_id
+      FROM crm.listar_relacionamentos_assunto_admin(
+        ${chave},
+        ${data.assuntoId}
+      )
+    `;
+
+    return rows.map((row) => Number(row.subassunto_id));
+  });
+
+export const salvarRelacionamentosAssuntoAdminCRM = createServerFn({
+  method: "POST",
+})
+  .validator(
+    (data: {
+      assuntoId: number;
+      subassuntoIds: number[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    const arrayLiteral = `{${data.subassuntoIds.join(",")}}`;
+
+    const rows = await sql<{ quantidade: number }[]>`
+      SELECT crm.salvar_relacionamentos_assunto_admin(
+        ${chave},
+        ${data.assuntoId},
+        ${arrayLiteral}::bigint[]
+      ) AS quantidade
+    `;
+
+    return {
+      ok: true,
+      quantidade: Number(rows[0]?.quantidade ?? 0),
+    };
+  });
+
+export const atualizarParametroDetalheCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { ativo: boolean }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    const rows = await sql<{ ok: boolean }[]>`
+      SELECT crm.atualizar_parametro_booleano(
+        ${chave},
+        'EXIBIR_DETALHE_OCORRENCIA',
+        ${data.ativo}
+      ) AS ok
+    `;
+
+    if (!rows[0]?.ok) {
+      throw new Error("Não foi possível atualizar a parametrização.");
+    }
+
+    return { ok: true };
+  });
