@@ -36,7 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   excluirCanalOrigemCRM,
-  inserirCanalOrigemCRM,
+  inserirCanaisOrigensCRM,
   listarCanaisOrigensCRM,
   type CanalOrigemRegistradoCRM,
 } from "@/lib/canal-origem.functions";
@@ -82,7 +82,7 @@ type FormClassificacao = {
 
 type FormCanalOrigem = {
   canal: number | null;
-  origem: number | null;
+  origens: number[];
 };
 
 const classificacaoVazia: FormClassificacao = {
@@ -95,7 +95,7 @@ const classificacaoVazia: FormClassificacao = {
 
 const canalOrigemVazio: FormCanalOrigem = {
   canal: null,
-  origem: null,
+  origens: [],
 };
 
 const filtrosCadastro: FiltrosTabulacoesCRM = {
@@ -200,7 +200,20 @@ function Cadastro({ id }: { id: Identidade }) {
     try {
       const raw = sessionStorage.getItem("gtc_form_canal_origem");
       if (raw) {
-        setFormCanalOrigem({ ...canalOrigemVazio, ...JSON.parse(raw) });
+        const salvo = JSON.parse(raw) as {
+          canal?: number | null;
+          origem?: number | null;
+          origens?: number[];
+        };
+
+        setFormCanalOrigem({
+          canal: salvo.canal ?? null,
+          origens: Array.isArray(salvo.origens)
+            ? salvo.origens
+            : salvo.origem != null
+              ? [salvo.origem]
+              : [],
+        });
       }
     } catch {
       // Ignora formulário inválido salvo anteriormente.
@@ -235,7 +248,9 @@ function Cadastro({ id }: { id: Identidade }) {
 
     setFormCanalOrigem((atual) => ({
       canal: existe(cad.canal, atual.canal) ? atual.canal : null,
-      origem: existe(cad.origem, atual.origem) ? atual.origem : null,
+      origens: atual.origens.filter((origemId) =>
+        cad.origem.some((item) => item.id === origemId),
+      ),
     }));
 
     setForm((atual) => {
@@ -309,7 +324,7 @@ function Cadastro({ id }: { id: Identidade }) {
   );
 
   const obrigatoriosCanalOrigem =
-    formCanalOrigem.canal != null && formCanalOrigem.origem != null;
+    formCanalOrigem.canal != null && formCanalOrigem.origens.length > 0;
 
   const obrigatoriosClassificacao =
     form.tipo != null &&
@@ -327,27 +342,40 @@ function Cadastro({ id }: { id: Identidade }) {
   }
 
   async function adicionarCanalOrigem() {
-    if (!obrigatoriosCanalOrigem) {
-      toast.error("Selecione Canal e Origem.");
+    if (formCanalOrigem.canal == null) {
+      toast.error("Selecione um Canal.");
+      return;
+    }
+
+    if (formCanalOrigem.origens.length === 0) {
+      toast.error("Selecione pelo menos uma Origem.");
       return;
     }
 
     setSavingCanalOrigem(true);
 
     try {
-      const resultado = await inserirCanalOrigemCRM({
+      const resultado = await inserirCanaisOrigensCRM({
         data: {
-          canal: formCanalOrigem.canal!,
-          origem: formCanalOrigem.origem!,
+          canal: formCanalOrigem.canal,
+          origens: formCanalOrigem.origens,
         },
       });
 
-      if (resultado.status === "duplicada") {
-        toast.info("Esta combinação de Canal e Origem já foi cadastrada por você.");
-        return;
+      if (resultado.inseridos > 0 && resultado.duplicados === 0) {
+        toast.success(
+          `${resultado.inseridos} combinação(ões) de Canal e Origem adicionada(s) com sucesso.`,
+        );
+      } else if (resultado.inseridos > 0) {
+        toast.warning(
+          `${resultado.inseridos} combinação(ões) adicionada(s). ${resultado.duplicados} já estavam cadastrada(s) por você e não foram duplicadas.`,
+        );
+      } else if (resultado.duplicados > 0) {
+        toast.warning(
+          "Todas as combinações selecionadas já estavam cadastradas por você.",
+        );
       }
 
-      toast.success("Canal e Origem adicionados com sucesso.");
       setPageCanalOrigem(0);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
@@ -358,7 +386,9 @@ function Cadastro({ id }: { id: Identidade }) {
     } catch (error) {
       console.error(error);
       toast.error(
-        error instanceof Error ? error.message : "Erro ao gravar Canal e Origem.",
+        error instanceof Error
+          ? error.message
+          : "Erro ao gravar as combinações de Canal e Origem.",
       );
     } finally {
       setSavingCanalOrigem(false);
@@ -569,7 +599,7 @@ function Cadastro({ id }: { id: Identidade }) {
 
         <TabsContent value="canal-origem" className="space-y-4">
           <div className="rounded-xl border bg-card p-6">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <Campo label="Canal" req>
                 <SearchSelect
                   options={cad.canal}
@@ -581,16 +611,22 @@ function Cadastro({ id }: { id: Identidade }) {
                 />
               </Campo>
 
-              <Campo label="Origem" req>
-                <SearchSelect
+              <div className="space-y-1.5 md:col-span-2">
+                <Label>
+                  Origens
+                  <span className="text-destructive"> *</span>
+                </Label>
+                <CheckboxMultiSelect
                   options={cad.origem}
-                  value={formCanalOrigem.origem}
-                  onChange={(value) =>
-                    setFormCanalOrigem((atual) => ({ ...atual, origem: value }))
+                  selectedIds={formCanalOrigem.origens}
+                  onChange={(origens) =>
+                    setFormCanalOrigem((atual) => ({ ...atual, origens }))
                   }
-                  clearable
+                  searchPlaceholder="Buscar Origem..."
+                  emptyMessage="Nenhuma Origem disponível."
+                  disabled={savingCanalOrigem}
                 />
-              </Campo>
+              </div>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -599,7 +635,7 @@ function Cadastro({ id }: { id: Identidade }) {
                 disabled={savingCanalOrigem || !obrigatoriosCanalOrigem}
               >
                 {savingCanalOrigem ? <Loader2 className="animate-spin" /> : <Plus />}
-                Adicionar Canal e Origem
+                Adicionar Canal e Origens
               </Button>
 
               <Button
