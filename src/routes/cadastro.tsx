@@ -13,11 +13,11 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
+import { CanaisOrigensTable } from "@/components/CanaisOrigensTable";
 import { CheckboxMultiSelect } from "@/components/CheckboxMultiSelect";
 import { SearchSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
@@ -349,7 +349,12 @@ function Cadastro({ id }: { id: Identidade }) {
 
       toast.success("Canal e Origem adicionados com sucesso.");
       setPageCanalOrigem(0);
-      await queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
+        queryClient.invalidateQueries({ queryKey: ["registros-canal-origem"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+      ]);
     } catch (error) {
       console.error(error);
       toast.error(
@@ -389,13 +394,11 @@ function Cadastro({ id }: { id: Identidade }) {
           `${resultado.inseridos} tabulação(ões) adicionada(s) com sucesso.`,
         );
       } else if (resultado.inseridos > 0) {
-        toast.success(
-          `${resultado.inseridos} adicionada(s). ${resultado.duplicados} combinação(ões) já existiam e não foram duplicadas.`,
+        toast.warning(
+          `${resultado.inseridos} tabulação(ões) adicionada(s). ${resultado.duplicados} já haviam sido inserida(s) por você e não foram duplicadas.`,
         );
       } else if (resultado.duplicados > 0) {
-        toast.info(
-          "Todas as combinações selecionadas já estavam cadastradas por você.",
-        );
+        toast.warning("Esta tabulação já foi inserida por você.");
       }
 
       await invalidarDados();
@@ -432,7 +435,12 @@ function Cadastro({ id }: { id: Identidade }) {
       await excluirCanalOrigemCRM({ data: { id: delCanalOrigem.id_registro } });
       toast.success("Registro de Canal e Origem excluído.");
       setDelCanalOrigem(null);
-      await queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
+        queryClient.invalidateQueries({ queryKey: ["registros-canal-origem"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+      ]);
     } catch (error) {
       console.error(error);
       toast.error(
@@ -641,39 +649,12 @@ function Cadastro({ id }: { id: Identidade }) {
                 Não foi possível carregar os registros de Canal e Origem.
               </p>
             ) : canaisOrigens.data?.rows.length ? (
-              <div className="overflow-auto rounded-lg border">
-                <table className="w-full min-w-[720px] text-sm">
-                  <thead className="bg-secondary text-left">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Canal</th>
-                      <th className="px-3 py-2 font-medium">Origem</th>
-                      <th className="px-3 py-2 font-medium">Data/Hora Criação</th>
-                      <th className="w-20 px-3 py-2 text-center font-medium">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {canaisOrigens.data.rows.map((row) => (
-                      <tr key={row.id_registro} className="border-t">
-                        <td className="px-3 py-2">{row.canal}</td>
-                        <td className="px-3 py-2">{row.origem}</td>
-                        <td className="whitespace-nowrap px-3 py-2">
-                          {new Date(row.data_hora_inclusao).toLocaleString("pt-BR")}
-                        </td>
-                        <td className="px-3 py-1 text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Excluir registro ${row.id_registro}`}
-                            onClick={() => setDelCanalOrigem(row)}
-                          >
-                            <Trash2 className="size-4 text-destructive" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <CanaisOrigensTable
+                rows={canaisOrigens.data.rows}
+                usuarioAtualId={id.usuarioId}
+                onExcluir={setDelCanalOrigem}
+                mostrarAuditoriaExclusao={false}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">
                 Nenhum Canal e Origem cadastrado ainda.
