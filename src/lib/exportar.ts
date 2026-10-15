@@ -7,20 +7,23 @@ import {
 } from "./crm.functions";
 import type { Identidade } from "./session";
 
-const COLS = [
-  { h: "Canal", k: "canal", w: 18 },
-  { h: "Origem", k: "origem", w: 22 },
+type ColunaExportacao = {
+  h: string;
+  k: keyof TabulacaoExportacaoCRM;
+  w: number;
+};
+
+const COLS_BASE: ColunaExportacao[] = [
   { h: "Tipo de Ocorrência", k: "tipo_ocorrencia", w: 22 },
   { h: "Assunto", k: "assunto", w: 30 },
   { h: "Subassunto", k: "subassunto", w: 30 },
   { h: "Área de Interesse", k: "area_interesse", w: 24 },
-  { h: "Detalhe da Ocorrência", k: "detalhe_ocorrencia", w: 30 },
   { h: "Grau de Criticidade", k: "criticidade", w: 22 },
   { h: "Nome do Usuário", k: "nome_usuario", w: 28 },
   { h: "Setor do Usuário", k: "setor_usuario", w: 24 },
   { h: "Data e Hora da Criação", k: "data_hora_inclusao", w: 22 },
   { h: "ID do Registro", k: "id_registro", w: 14 },
-] as const;
+];
 
 function slug(s: string) {
   return s
@@ -34,10 +37,12 @@ export async function exportarTabulacoes({
   id,
   somenteMinhas,
   filtros,
+  mostrarDetalhe,
 }: {
   id: Identidade;
   somenteMinhas: boolean;
   filtros: FiltrosTabulacoesCRM;
+  mostrarDetalhe: boolean;
 }): Promise<number> {
   const rows = (await exportarTabulacoesCRM({
     data: {
@@ -48,11 +53,21 @@ export async function exportarTabulacoes({
 
   if (rows.length === 0) return 0;
 
+  const colunas = [...COLS_BASE];
+
+  if (mostrarDetalhe) {
+    colunas.splice(4, 0, {
+      h: "Detalhe da Ocorrência",
+      k: "detalhe_ocorrencia",
+      w: 30,
+    });
+  }
+
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Tabulações");
 
-  ws.columns = COLS.map((c) => ({
+  ws.columns = colunas.map((c) => ({
     header: c.h,
     key: c.k,
     width: c.w,
@@ -61,7 +76,7 @@ export async function exportarTabulacoes({
   for (const r of rows) {
     const line: Record<string, unknown> = {};
 
-    for (const c of COLS) {
+    for (const c of colunas) {
       const v = r[c.k];
       line[c.k] =
         c.k === "data_hora_inclusao" && v
@@ -88,7 +103,7 @@ export async function exportarTabulacoes({
   ws.getColumn("data_hora_inclusao").numFmt = "dd/mm/yyyy hh:mm:ss";
   ws.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: rows.length + 1, column: COLS.length },
+    to: { row: rows.length + 1, column: colunas.length },
   };
   ws.views = [{ state: "frozen", ySplit: 1 }];
 
