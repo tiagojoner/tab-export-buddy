@@ -1,0 +1,452 @@
+//crm/src/routes/cadastros.tsx
+
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Edit3, Loader2, Plus, Save, ShieldAlert } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+
+import { AppShell } from "@/components/AppShell";
+import { CheckboxMultiSelect } from "@/components/CheckboxMultiSelect";
+import { SearchSelect } from "@/components/SearchSelect";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  carregarCadastrosAdminCRM,
+  carregarRelacionamentosAssuntoAdminCRM,
+  salvarCadastroAdminCRM,
+  salvarRelacionamentosAssuntoAdminCRM,
+  type CadastroAdminItem,
+  type CadastroAdminTipo,
+} from "@/lib/admin.functions";
+import type { Identidade } from "@/lib/session";
+
+export const Route = createFileRoute("/cadastros")({
+  head: () => ({
+    meta: [
+      { title: "Cadastro — Gestor de Tabulações CRM" },
+      {
+        name: "description",
+        content: "Gestão administrativa de Assuntos, Subassuntos e relacionamentos.",
+      },
+    ],
+  }),
+  component: () => <AppShell>{(id) => <Cadastros id={id} />}</AppShell>,
+});
+
+type Edicao = {
+  cadastro: CadastroAdminTipo;
+  item: CadastroAdminItem | null;
+};
+
+function normalizar(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function Cadastros({ id }: { id: Identidade }) {
+  const queryClient = useQueryClient();
+  const [aba, setAba] = useState("assunto");
+  const [buscaAssunto, setBuscaAssunto] = useState("");
+  const [buscaSubassunto, setBuscaSubassunto] = useState("");
+  const [edicao, setEdicao] = useState<Edicao | null>(null);
+  const [nomeEdicao, setNomeEdicao] = useState("");
+  const [ativoEdicao, setAtivoEdicao] = useState(true);
+  const [salvandoItem, setSalvandoItem] = useState(false);
+
+  const [assuntoRelacionamento, setAssuntoRelacionamento] = useState<number | null>(null);
+  const [subassuntosRelacionados, setSubassuntosRelacionados] = useState<number[]>([]);
+  const [salvandoRelacionamento, setSalvandoRelacionamento] = useState(false);
+
+  const dados = useQuery({
+    queryKey: ["cadastros-admin"],
+    queryFn: carregarCadastrosAdminCRM,
+    enabled: id.perfil === "ADMINISTRADOR",
+    staleTime: 60_000,
+  });
+
+  const relacionamentos = useQuery({
+    queryKey: ["relacionamentos-assunto-admin", assuntoRelacionamento],
+    enabled: id.perfil === "ADMINISTRADOR" && assuntoRelacionamento != null,
+    queryFn: () =>
+      carregarRelacionamentosAssuntoAdminCRM({
+        data: { assuntoId: assuntoRelacionamento! },
+      }),
+  });
+
+  useEffect(() => {
+    if (assuntoRelacionamento == null) {
+      setSubassuntosRelacionados([]);
+      return;
+    }
+
+    if (relacionamentos.data) {
+      setSubassuntosRelacionados(relacionamentos.data);
+    }
+  }, [assuntoRelacionamento, relacionamentos.data]);
+
+  const assuntos = dados.data?.assuntos ?? [];
+  const subassuntos = dados.data?.subassuntos ?? [];
+
+  const assuntosAtivos = useMemo(
+    () => assuntos.filter((item) => item.ativo),
+    [assuntos],
+  );
+
+  const subassuntosAtivos = useMemo(
+    () => subassuntos.filter((item) => item.ativo),
+    [subassuntos],
+  );
+
+  const assuntosFiltrados = useMemo(() => {
+    const termo = normalizar(buscaAssunto.trim());
+    return termo
+      ? assuntos.filter((item) => normalizar(item.nome).includes(termo))
+      : assuntos;
+  }, [assuntos, buscaAssunto]);
+
+  const subassuntosFiltrados = useMemo(() => {
+    const termo = normalizar(buscaSubassunto.trim());
+    return termo
+      ? subassuntos.filter((item) => normalizar(item.nome).includes(termo))
+      : subassuntos;
+  }, [subassuntos, buscaSubassunto]);
+
+  if (id.perfil !== "ADMINISTRADOR") {
+    return (
+      <div className="mx-auto max-w-xl rounded-xl border bg-card p-6">
+        <div className="flex items-start gap-3">
+          <ShieldAlert className="mt-0.5 size-5 text-destructive" />
+          <div>
+            <h1 className="font-semibold">Acesso restrito</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Esta área está disponível somente para usuários Administradores.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (dados.isLoading) {
+    return (
+      <div className="flex justify-center py-20">
+        <Loader2 className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (dados.isError || !dados.data) {
+    return (
+      <div className="rounded-xl border bg-card p-6 text-sm text-destructive">
+        Não foi possível carregar os cadastros administrativos.
+      </div>
+    );
+  }
+
+  function abrirNovo(cadastro: CadastroAdminTipo) {
+    setEdicao({ cadastro, item: null });
+    setNomeEdicao("");
+    setAtivoEdicao(true);
+  }
+
+  function abrirEdicao(cadastro: CadastroAdminTipo, item: CadastroAdminItem) {
+    setEdicao({ cadastro, item });
+    setNomeEdicao(item.nome);
+    setAtivoEdicao(item.ativo);
+  }
+
+  async function salvarItem() {
+    if (!edicao || !nomeEdicao.trim()) return;
+
+    setSalvandoItem(true);
+
+    try {
+      const resultado = await salvarCadastroAdminCRM({
+        data: {
+          cadastro: edicao.cadastro,
+          id: edicao.item?.id ?? null,
+          nome: nomeEdicao.trim(),
+          ativo: ativoEdicao,
+        },
+      });
+
+      if (!resultado.ok) {
+        toast.error("Já existe um cadastro com este nome.");
+        return;
+      }
+
+      toast.success(
+        `${edicao.cadastro === "assunto" ? "Assunto" : "Subassunto"} salvo com sucesso.`,
+      );
+      setEdicao(null);
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cadastros-admin"] }),
+        queryClient.invalidateQueries({ queryKey: ["cadastros"] }),
+        queryClient.invalidateQueries({ queryKey: ["subassuntos-relacionados"] }),
+      ]);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível salvar o cadastro.",
+      );
+    } finally {
+      setSalvandoItem(false);
+    }
+  }
+
+  async function salvarRelacionamentos() {
+    if (assuntoRelacionamento == null) return;
+
+    setSalvandoRelacionamento(true);
+
+    try {
+      const resultado = await salvarRelacionamentosAssuntoAdminCRM({
+        data: {
+          assuntoId: assuntoRelacionamento,
+          subassuntoIds: subassuntosRelacionados,
+        },
+      });
+
+      toast.success(
+        `${resultado.quantidade} relacionamento(s) salvo(s) para o Assunto selecionado.`,
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["relacionamentos-assunto-admin"] }),
+        queryClient.invalidateQueries({ queryKey: ["subassuntos-relacionados"] }),
+      ]);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível salvar os relacionamentos.",
+      );
+    } finally {
+      setSalvandoRelacionamento(false);
+    }
+  }
+
+  const ListaCadastro = ({
+    cadastro,
+    items,
+    busca,
+    onBusca,
+  }: {
+    cadastro: CadastroAdminTipo;
+    items: CadastroAdminItem[];
+    busca: string;
+    onBusca: (value: string) => void;
+  }) => (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Input
+          value={busca}
+          onChange={(event) => onBusca(event.target.value)}
+          placeholder={`Buscar ${cadastro === "assunto" ? "Assunto" : "Subassunto"}...`}
+          className="max-w-md"
+        />
+
+        <Button onClick={() => abrirNovo(cadastro)}>
+          <Plus />
+          Novo {cadastro === "assunto" ? "Assunto" : "Subassunto"}
+        </Button>
+      </div>
+
+      <div className="max-h-[62vh] overflow-auto rounded-xl border bg-card">
+        <table className="w-full min-w-[700px] text-sm">
+          <thead className="sticky top-0 z-10 bg-secondary text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium">Nome</th>
+              <th className="w-28 px-3 py-2 font-medium">Status</th>
+              <th className="w-24 px-3 py-2 text-center font-medium">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className="border-t">
+                <td className="px-3 py-2">{item.nome}</td>
+                <td className="px-3 py-2">
+                  <span className={item.ativo ? "font-medium text-primary" : "text-muted-foreground"}>
+                    {item.ativo ? "Ativo" : "Inativo"}
+                  </span>
+                </td>
+                <td className="px-3 py-1 text-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Editar ${item.nome}`}
+                    onClick={() => abrirEdicao(cadastro, item)}
+                  >
+                    <Edit3 className="size-4" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-3 py-10 text-center text-muted-foreground">
+                  Nenhum registro encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">Cadastro</h1>
+        <p className="text-sm text-muted-foreground">
+          Gestão administrativa dos Assuntos, Subassuntos e seus relacionamentos.
+        </p>
+      </div>
+
+      <Tabs value={aba} onValueChange={setAba}>
+        <TabsList>
+          <TabsTrigger value="assunto">Assuntos</TabsTrigger>
+          <TabsTrigger value="subassunto">Subassuntos</TabsTrigger>
+          <TabsTrigger value="relacionamento">Relacionamentos</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="assunto" className="pt-2">
+          <ListaCadastro
+            cadastro="assunto"
+            items={assuntosFiltrados}
+            busca={buscaAssunto}
+            onBusca={setBuscaAssunto}
+          />
+        </TabsContent>
+
+        <TabsContent value="subassunto" className="pt-2">
+          <ListaCadastro
+            cadastro="subassunto"
+            items={subassuntosFiltrados}
+            busca={buscaSubassunto}
+            onBusca={setBuscaSubassunto}
+          />
+        </TabsContent>
+
+        <TabsContent value="relacionamento" className="space-y-4 pt-2">
+          <div className="rounded-xl border bg-card p-5">
+            <div className="max-w-xl space-y-1.5">
+              <Label>Assunto *</Label>
+              <SearchSelect
+                options={assuntosAtivos}
+                value={assuntoRelacionamento}
+                onChange={(value) => {
+                  setAssuntoRelacionamento(value);
+                  setSubassuntosRelacionados([]);
+                }}
+                clearable
+              />
+            </div>
+          </div>
+
+          {assuntoRelacionamento != null && (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-3">
+                <h2 className="font-semibold">Subassuntos vinculados</h2>
+                <p className="text-sm text-muted-foreground">
+                  Marque todos os Subassuntos que pertencem ao Assunto selecionado.
+                </p>
+              </div>
+
+              {relacionamentos.isLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  <CheckboxMultiSelect
+                    options={subassuntosAtivos}
+                    selectedIds={subassuntosRelacionados}
+                    onChange={setSubassuntosRelacionados}
+                    searchPlaceholder="Buscar Subassunto..."
+                    emptyMessage="Nenhum Subassunto ativo disponível."
+                  />
+
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      onClick={salvarRelacionamentos}
+                      disabled={salvandoRelacionamento}
+                    >
+                      {salvandoRelacionamento ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Save />
+                      )}
+                      Salvar relacionamentos
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={!!edicao} onOpenChange={(open) => !open && setEdicao(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {edicao?.item ? "Editar" : "Novo"}{" "}
+              {edicao?.cadastro === "assunto" ? "Assunto" : "Subassunto"}
+            </DialogTitle>
+            <DialogDescription>
+              Informe o nome e defina se o cadastro ficará ativo para uso nas tabulações.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Nome *</Label>
+              <Input
+                value={nomeEdicao}
+                onChange={(event) => setNomeEdicao(event.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <div className="text-sm font-medium">Ativo</div>
+                <div className="text-xs text-muted-foreground">
+                  Cadastros inativos deixam de aparecer para novas tabulações.
+                </div>
+              </div>
+              <Switch checked={ativoEdicao} onCheckedChange={setAtivoEdicao} />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEdicao(null)} disabled={salvandoItem}>
+              Cancelar
+            </Button>
+            <Button onClick={salvarItem} disabled={salvandoItem || !nomeEdicao.trim()}>
+              {salvandoItem ? <Loader2 className="animate-spin" /> : <Save />}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
