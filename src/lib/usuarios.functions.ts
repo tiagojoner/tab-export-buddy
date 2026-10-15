@@ -1,4 +1,4 @@
-// crm/src/lib/usuarios.functions.ts
+//crm/src/lib/usuarios.functions.ts
 
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseHeader } from "@tanstack/react-start/server";
@@ -9,17 +9,20 @@ import {
   salvarChaveSessao,
 } from "./auth.server";
 import { getDb } from "./db.server";
+import type { PerfilUsuario } from "./session";
 
 export type UsuarioCRM = {
   usuarioId: number;
   nome: string;
   setor: string;
+  perfil: PerfilUsuario;
 };
 
 type UsuarioRow = {
   usuario_id: string;
   nome_completo: string;
   setor: string;
+  perfil: PerfilUsuario;
 };
 
 const CHAVE_REGEX = /^[A-Z0-9]{3}-[A-Z0-9]{3}-[A-Z0-9]{3}$/;
@@ -35,7 +38,8 @@ async function buscarUsuario(chave: string): Promise<UsuarioCRM | null> {
     SELECT
       usuario_id::text AS usuario_id,
       nome_completo,
-      setor
+      setor,
+      perfil
     FROM crm.identificar_usuario(${chave})
   `;
 
@@ -49,6 +53,7 @@ async function buscarUsuario(chave: string): Promise<UsuarioCRM | null> {
     usuarioId: Number(row.usuario_id),
     nome: row.nome_completo,
     setor: row.setor,
+    perfil: row.perfil,
   };
 }
 
