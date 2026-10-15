@@ -266,6 +266,10 @@ function Cadastros({ id }: { id: Identidade }) {
         </Button>
       </div>
 
+      <div className="text-sm text-muted-foreground">
+        {items.length} registro(s) encontrado(s)
+      </div>
+
       <div className="max-h-[62vh] overflow-auto rounded-xl border bg-card">
         <table className="w-full min-w-[700px] text-sm">
           <thead className="sticky top-0 z-10 bg-secondary text-left">
@@ -357,6 +361,10 @@ function Cadastros({ id }: { id: Identidade }) {
                 clearable
               />
             </div>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            {assuntoRelacionamento == null ? 0 : (relacionamentos.data?.length ?? 0)} registro(s) encontrado(s)
           </div>
 
           {assuntoRelacionamento != null && (
