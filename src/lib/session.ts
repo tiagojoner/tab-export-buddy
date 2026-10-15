@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 
+export type PerfilUsuario = "ADMINISTRADOR" | "USUARIO";
+
 export type Identidade = {
   usuarioId: number;
   nome: string;
   setor: string;
+  perfil: PerfilUsuario;
 };
 
 const KEY = "gtc_identidade";
@@ -28,7 +31,8 @@ export function lerIdentidade(): Identidade | null {
     if (
       !Number.isFinite(value.usuarioId) ||
       !value.nome ||
-      !value.setor
+      !value.setor ||
+      !["ADMINISTRADOR", "USUARIO"].includes(value.perfil)
     ) {
       return null;
     }
@@ -47,6 +51,8 @@ export function salvarIdentidade(value: Identidade): void {
 export function limparIdentidade(): void {
   sessionStorage.removeItem(KEY);
   sessionStorage.removeItem("gtc_form");
+  sessionStorage.removeItem("gtc_form_classificacao");
+  sessionStorage.removeItem("gtc_form_canal_origem");
   window.dispatchEvent(new Event(EVT));
 }
 
