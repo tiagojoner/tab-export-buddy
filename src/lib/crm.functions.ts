@@ -1,4 +1,5 @@
 //crm/src/lib/crm.functions.ts
+
 import { createServerFn } from "@tanstack/react-start";
 import { setResponseHeader } from "@tanstack/react-start/server";
 
@@ -14,6 +15,10 @@ export type CriticidadeCRM = OpcaoCRM & {
   ordem: number;
 };
 
+export type ConfiguracaoCRM = {
+  exibirDetalheOcorrencia: boolean;
+};
+
 export type CadastrosCRM = {
   canal: OpcaoCRM[];
   origem: OpcaoCRM[];
@@ -23,13 +28,12 @@ export type CadastrosCRM = {
   area: OpcaoCRM[];
   detalhe: OpcaoCRM[];
   criticidade: CriticidadeCRM[];
+  configuracao: ConfiguracaoCRM;
 };
 
 export type StatusTabulacao = "ativas" | "excluidas" | "todas";
 
 export type FiltrosTabulacoesCRM = {
-  canal: number | null;
-  origem: number | null;
   tipo: number | null;
   assunto: number | null;
   subassunto: number | null;
@@ -43,8 +47,6 @@ export type FiltrosTabulacoesCRM = {
 
 export type TabulacaoCRM = {
   id_registro: number;
-  canal: string;
-  origem: string;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -81,8 +83,6 @@ export type FiltrosUsuariosSetoresCRM = {
 
 export type TabulacaoExportacaoCRM = {
   id_registro: number;
-  canal: string;
-  origem: string;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -133,11 +133,10 @@ type OpcaoRow = {
   nome: string;
 };
 
-
 type TabulacaoRow = {
   id_registro: string;
-  canal: string;
-  origem: string;
+  canal: string | null;
+  origem: string | null;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -165,8 +164,8 @@ type UsuarioFiltroRow = {
 
 type TabulacaoExportacaoRow = {
   id_registro: string;
-  canal: string;
-  origem: string;
+  canal: string | null;
+  origem: string | null;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -207,8 +206,6 @@ type DashboardSetorAdesaoRow = {
 };
 
 const filtrosVazios: FiltrosTabulacoesCRM = {
-  canal: null,
-  origem: null,
   tipo: null,
   assunto: null,
   subassunto: null,
@@ -241,8 +238,6 @@ function dataIso(value: Date | string | null): string | null {
 function mapTabulacao(row: TabulacaoRow): TabulacaoCRM {
   return {
     id_registro: Number(row.id_registro),
-    canal: row.canal,
-    origem: row.origem,
     tipo_ocorrencia: row.tipo_ocorrencia,
     assunto: row.assunto,
     subassunto: row.subassunto,
@@ -265,8 +260,6 @@ function mapTabulacao(row: TabulacaoRow): TabulacaoCRM {
 function mapExportacao(row: TabulacaoExportacaoRow): TabulacaoExportacaoCRM {
   return {
     id_registro: Number(row.id_registro),
-    canal: row.canal,
-    origem: row.origem,
     tipo_ocorrencia: row.tipo_ocorrencia,
     assunto: row.assunto,
     subassunto: row.subassunto,
@@ -358,8 +351,8 @@ async function buscarPagina(
     FROM crm.listar_tabulacoes_paginadas(
       ${chave},
       ${params.somenteMinhas},
-      ${filtros.canal},
-      ${filtros.origem},
+      ${null},
+      ${null},
       ${filtros.tipo},
       ${filtros.assunto},
       ${filtros.subassunto},
@@ -376,7 +369,7 @@ async function buscarPagina(
 
   return {
     rows: rows.map(mapTabulacao),
-    count: rows.length > 0 ? Number(rows[0].total_registros) : 0,
+    count: rows.length > 0 ? Number(rows[0]?.total_registros ?? 0) : 0,
   };
 }
 
@@ -386,6 +379,7 @@ export const carregarCadastrosCRM = createServerFn({
   setResponseHeader("Cache-Control", "no-store");
 
   const chave = exigirChave();
+  const sql = getDb();
 
   const [
     canal,
@@ -396,6 +390,7 @@ export const carregarCadastrosCRM = createServerFn({
     area,
     detalhe,
     criticidadeBase,
+    parametroRows,
   ] = await Promise.all([
     listarOpcoes(chave, "canal"),
     listarOpcoes(chave, "origem"),
@@ -405,6 +400,12 @@ export const carregarCadastrosCRM = createServerFn({
     listarOpcoes(chave, "area_interesse"),
     listarOpcoes(chave, "detalhe_ocorrencia"),
     listarOpcoes(chave, "criticidade"),
+    sql<{ valor: boolean }[]>`
+      SELECT crm.obter_parametro_booleano(
+        ${chave},
+        'EXIBIR_DETALHE_OCORRENCIA'
+      ) AS valor
+    `,
   ]);
 
   const sortNome = (a: OpcaoCRM, b: OpcaoCRM) =>
@@ -426,19 +427,44 @@ export const carregarCadastrosCRM = createServerFn({
     area: area.sort(sortNome),
     detalhe: detalhe.sort(sortNome),
     criticidade,
+    configuracao: {
+      exibirDetalheOcorrencia: Boolean(parametroRows[0]?.valor),
+    },
   } satisfies CadastrosCRM;
 });
 
-export const inserirTabulacaoCRM = createServerFn({
+export const listarSubassuntosRelacionadosCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { assuntoId: number }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    const rows = await sql<OpcaoRow[]>`
+      SELECT id::text AS id, nome
+      FROM crm.listar_subassuntos_relacionados(
+        ${chave},
+        ${data.assuntoId}
+      )
+    `;
+
+    return rows.map((row) => ({
+      id: Number(row.id),
+      nome: row.nome,
+    })) satisfies OpcaoCRM[];
+  });
+
+export const inserirClassificacoesCRM = createServerFn({
   method: "POST",
 })
   .validator(
     (data: {
-      canal: number;
-      origem: number;
       tipo: number;
       assunto: number;
-      subassunto: number | null;
+      subassuntos: number[];
       area: number;
       detalhe: number | null;
       criticidade: number;
@@ -449,58 +475,26 @@ export const inserirTabulacaoCRM = createServerFn({
 
     const chave = exigirChave();
     const sql = getDb();
+    const arrayLiteral = `{${data.subassuntos.join(",")}}`;
 
-    try {
-      const rows = await sql<{ id: string }[]>`
-        SELECT crm.inserir_tabulacao(
-          ${chave},
-          ${data.canal},
-          ${data.origem},
-          ${data.tipo},
-          ${data.assunto},
-          ${data.subassunto},
-          ${data.area},
-          ${data.detalhe},
-          ${data.criticidade}
-        )::text AS id
-      `;
+    const rows = await sql<{ inseridos: number; duplicados: number }[]>`
+      SELECT inseridos, duplicados
+      FROM crm.inserir_classificacoes(
+        ${chave},
+        ${data.tipo},
+        ${data.assunto},
+        ${arrayLiteral}::bigint[],
+        ${data.area},
+        ${data.detalhe},
+        ${data.criticidade}
+      )
+    `;
 
-      const id = rows[0]?.id;
-
-      if (!id) {
-        throw new Error("O PostgreSQL não retornou o ID da tabulação.");
-      }
-
-      return { status: "criada" as const, id: Number(id) };
-    } catch (error) {
-      const mensagem =
-        error instanceof Error ? error.message : String(error ?? "");
-
-      if (mensagem.includes("TABULACAO_DUPLICADA")) {
-        return { status: "duplicada" as const, id: null };
-      }
-
-      throw error;
-    }
+    return {
+      inseridos: Number(rows[0]?.inseridos ?? 0),
+      duplicados: Number(rows[0]?.duplicados ?? 0),
+    };
   });
-
-export const listarRecentesCRM = createServerFn({
-  method: "GET",
-}).handler(async () => {
-  setResponseHeader("Cache-Control", "no-store");
-
-  const pagina = await buscarPagina(exigirChave(), {
-    somenteMinhas: true,
-    filtros: { status: "ativas" },
-    page: 0,
-    pageSize: 25,
-  });
-
-  return {
-    count: pagina.count,
-    rows: pagina.rows.slice(0, 5),
-  } satisfies PaginaTabulacoesCRM;
-});
 
 export const listarTabulacoesCRM = createServerFn({
   method: "POST",
@@ -576,6 +570,33 @@ export const excluirTabulacaoCRM = createServerFn({
     return { ok: true };
   });
 
+export const atualizarCriticidadeTabulacaoCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { id: number; criticidade: number }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+
+    const rows = await sql<{ atualizou: boolean }[]>`
+      SELECT crm.atualizar_criticidade_tabulacao(
+        ${chave},
+        ${data.id},
+        ${data.criticidade}
+      ) AS atualizou
+    `;
+
+    if (!rows[0]?.atualizou) {
+      throw new Error(
+        "Não foi possível editar a criticidade. O registro pode estar excluído ou não pertencer ao usuário atual.",
+      );
+    }
+
+    return { ok: true };
+  });
+
 export const exportarTabulacoesCRM = createServerFn({
   method: "POST",
 })
@@ -609,8 +630,8 @@ export const exportarTabulacoesCRM = createServerFn({
       FROM crm.exportar_tabulacoes(
         ${chave},
         ${data.somenteMinhas},
-        ${filtros.canal},
-        ${filtros.origem},
+        ${null},
+        ${null},
         ${filtros.tipo},
         ${filtros.assunto},
         ${filtros.subassunto},
