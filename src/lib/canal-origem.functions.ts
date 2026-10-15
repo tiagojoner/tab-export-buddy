@@ -103,36 +103,30 @@ function mapCanalOrigem(row: CanalOrigemRow): CanalOrigemRegistradoCRM {
   };
 }
 
-export const inserirCanalOrigemCRM = createServerFn({
+export const inserirCanaisOrigensCRM = createServerFn({
   method: "POST",
 })
-  .validator((data: { canal: number; origem: number }) => data)
+  .validator((data: { canal: number; origens: number[] }) => data)
   .handler(async ({ data }) => {
     setResponseHeader("Cache-Control", "no-store");
 
     const chave = exigirChave();
     const sql = getDb();
+    const origensUnicas = Array.from(new Set(data.origens));
+    const arrayLiteral = `{${origensUnicas.join(",")}}`;
 
-    const rows = await sql<{ status: string; id_registro: string }[]>`
-      SELECT
-        status,
-        id_registro::text AS id_registro
-      FROM crm.inserir_canal_origem(
+    const rows = await sql<{ inseridos: number; duplicados: number }[]>`
+      SELECT inseridos, duplicados
+      FROM crm.inserir_canais_origens(
         ${chave},
         ${data.canal},
-        ${data.origem}
+        ${arrayLiteral}::bigint[]
       )
     `;
 
-    const row = rows[0];
-
-    if (!row) {
-      throw new Error("O PostgreSQL não retornou o resultado do cadastro.");
-    }
-
     return {
-      status: row.status === "duplicada" ? ("duplicada" as const) : ("criada" as const),
-      id: Number(row.id_registro),
+      inseridos: Number(rows[0]?.inseridos ?? 0),
+      duplicados: Number(rows[0]?.duplicados ?? 0),
     };
   });
 
