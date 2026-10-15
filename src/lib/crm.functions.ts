@@ -95,31 +95,43 @@ export type TabulacaoExportacaoCRM = {
 };
 
 export type DashboardResumoAdesaoCRM = {
-  totalAtivas: number;
-  minhasTabulacoes: number;
+  classificacoesAtivas: number;
+  canaisOrigensAtivos: number;
+  minhasClassificacoes: number;
+  meusCanaisOrigens: number;
   usuariosAtivos: number;
-  usuariosParticipantes: number;
-  usuariosSemCadastro: number;
+  usuariosParticipantesClassificacao: number;
+  usuariosSemClassificacao: number;
+  usuariosParticipantesCanalOrigem: number;
+  usuariosSemCanalOrigem: number;
   setoresAtivos: number;
-  setoresParticipantes: number;
-  setoresSemCadastro: number;
+  setoresParticipantesClassificacao: number;
+  setoresSemClassificacao: number;
+  setoresParticipantesCanalOrigem: number;
+  setoresSemCanalOrigem: number;
 };
 
 export type DashboardUsuarioAdesaoCRM = {
   usuarioId: number;
   nomeUsuario: string;
   setor: string;
-  quantidadeAtivas: number;
-  ultimoCadastro: string | null;
+  classificacoesAtivas: number;
+  canaisOrigensAtivos: number;
+  ultimaClassificacao: string | null;
+  ultimoCanalOrigem: string | null;
 };
 
 export type DashboardSetorAdesaoCRM = {
   setor: string;
   totalUsuarios: number;
-  usuariosParticipantes: number;
-  usuariosSemCadastro: number;
-  totalTabulacoes: number;
-  ultimoCadastro: string | null;
+  usuariosParticipantesClassificacao: number;
+  usuariosSemClassificacao: number;
+  usuariosParticipantesCanalOrigem: number;
+  usuariosSemCanalOrigem: number;
+  totalClassificacoes: number;
+  totalCanaisOrigens: number;
+  ultimaClassificacao: string | null;
+  ultimoCanalOrigem: string | null;
 };
 
 export type DashboardAdesaoCRM = {
@@ -178,31 +190,43 @@ type TabulacaoExportacaoRow = {
 };
 
 type DashboardResumoAdesaoRow = {
-  total_ativas: string;
-  minhas_tabulacoes: string;
+  classificacoes_ativas: string;
+  canais_origens_ativos: string;
+  minhas_classificacoes: string;
+  meus_canais_origens: string;
   usuarios_ativos: string;
-  usuarios_participantes: string;
-  usuarios_sem_cadastro: string;
+  usuarios_participantes_classificacao: string;
+  usuarios_sem_classificacao: string;
+  usuarios_participantes_canal_origem: string;
+  usuarios_sem_canal_origem: string;
   setores_ativos: string;
-  setores_participantes: string;
-  setores_sem_cadastro: string;
+  setores_participantes_classificacao: string;
+  setores_sem_classificacao: string;
+  setores_participantes_canal_origem: string;
+  setores_sem_canal_origem: string;
 };
 
 type DashboardUsuarioAdesaoRow = {
   usuario_id: string;
   nome_usuario: string;
   setor: string;
-  quantidade_ativas: string;
-  ultimo_cadastro: Date | string | null;
+  classificacoes_ativas: string;
+  canais_origens_ativos: string;
+  ultima_classificacao: Date | string | null;
+  ultimo_canal_origem: Date | string | null;
 };
 
 type DashboardSetorAdesaoRow = {
   setor: string;
   total_usuarios: string;
-  usuarios_participantes: string;
-  usuarios_sem_cadastro: string;
-  total_tabulacoes: string;
-  ultimo_cadastro: Date | string | null;
+  usuarios_participantes_classificacao: string;
+  usuarios_sem_classificacao: string;
+  usuarios_participantes_canal_origem: string;
+  usuarios_sem_canal_origem: string;
+  total_classificacoes: string;
+  total_canais_origens: string;
+  ultima_classificacao: Date | string | null;
+  ultimo_canal_origem: Date | string | null;
 };
 
 const filtrosVazios: FiltrosTabulacoesCRM = {
@@ -657,65 +681,101 @@ export const carregarDashboardAdesaoCRM = createServerFn({
   const [resumoRows, usuariosRows, setoresRows] = await Promise.all([
     sql<DashboardResumoAdesaoRow[]>`
       SELECT
-        total_ativas::text AS total_ativas,
-        minhas_tabulacoes::text AS minhas_tabulacoes,
+        classificacoes_ativas::text AS classificacoes_ativas,
+        canais_origens_ativos::text AS canais_origens_ativos,
+        minhas_classificacoes::text AS minhas_classificacoes,
+        meus_canais_origens::text AS meus_canais_origens,
         usuarios_ativos::text AS usuarios_ativos,
-        usuarios_participantes::text AS usuarios_participantes,
-        usuarios_sem_cadastro::text AS usuarios_sem_cadastro,
+        usuarios_participantes_classificacao::text AS usuarios_participantes_classificacao,
+        usuarios_sem_classificacao::text AS usuarios_sem_classificacao,
+        usuarios_participantes_canal_origem::text AS usuarios_participantes_canal_origem,
+        usuarios_sem_canal_origem::text AS usuarios_sem_canal_origem,
         setores_ativos::text AS setores_ativos,
-        setores_participantes::text AS setores_participantes,
-        setores_sem_cadastro::text AS setores_sem_cadastro
-      FROM crm.dashboard_adesao_resumo(${chave})
+        setores_participantes_classificacao::text AS setores_participantes_classificacao,
+        setores_sem_classificacao::text AS setores_sem_classificacao,
+        setores_participantes_canal_origem::text AS setores_participantes_canal_origem,
+        setores_sem_canal_origem::text AS setores_sem_canal_origem
+      FROM crm.dashboard_adesao_v2_resumo(${chave})
     `,
     sql<DashboardUsuarioAdesaoRow[]>`
       SELECT
         usuario_id::text AS usuario_id,
         nome_usuario,
         setor,
-        quantidade_ativas::text AS quantidade_ativas,
-        ultimo_cadastro
-      FROM crm.dashboard_adesao_usuarios(${chave})
+        classificacoes_ativas::text AS classificacoes_ativas,
+        canais_origens_ativos::text AS canais_origens_ativos,
+        ultima_classificacao,
+        ultimo_canal_origem
+      FROM crm.dashboard_adesao_v2_usuarios(${chave})
     `,
     sql<DashboardSetorAdesaoRow[]>`
       SELECT
         setor,
         total_usuarios::text AS total_usuarios,
-        usuarios_participantes::text AS usuarios_participantes,
-        usuarios_sem_cadastro::text AS usuarios_sem_cadastro,
-        total_tabulacoes::text AS total_tabulacoes,
-        ultimo_cadastro
-      FROM crm.dashboard_adesao_setores(${chave})
+        usuarios_participantes_classificacao::text AS usuarios_participantes_classificacao,
+        usuarios_sem_classificacao::text AS usuarios_sem_classificacao,
+        usuarios_participantes_canal_origem::text AS usuarios_participantes_canal_origem,
+        usuarios_sem_canal_origem::text AS usuarios_sem_canal_origem,
+        total_classificacoes::text AS total_classificacoes,
+        total_canais_origens::text AS total_canais_origens,
+        ultima_classificacao,
+        ultimo_canal_origem
+      FROM crm.dashboard_adesao_v2_setores(${chave})
     `,
   ]);
 
   const resumoRow = resumoRows[0];
 
   const resumo: DashboardResumoAdesaoCRM = {
-    totalAtivas: Number(resumoRow?.total_ativas ?? 0),
-    minhasTabulacoes: Number(resumoRow?.minhas_tabulacoes ?? 0),
+    classificacoesAtivas: Number(resumoRow?.classificacoes_ativas ?? 0),
+    canaisOrigensAtivos: Number(resumoRow?.canais_origens_ativos ?? 0),
+    minhasClassificacoes: Number(resumoRow?.minhas_classificacoes ?? 0),
+    meusCanaisOrigens: Number(resumoRow?.meus_canais_origens ?? 0),
     usuariosAtivos: Number(resumoRow?.usuarios_ativos ?? 0),
-    usuariosParticipantes: Number(resumoRow?.usuarios_participantes ?? 0),
-    usuariosSemCadastro: Number(resumoRow?.usuarios_sem_cadastro ?? 0),
+    usuariosParticipantesClassificacao: Number(
+      resumoRow?.usuarios_participantes_classificacao ?? 0,
+    ),
+    usuariosSemClassificacao: Number(resumoRow?.usuarios_sem_classificacao ?? 0),
+    usuariosParticipantesCanalOrigem: Number(
+      resumoRow?.usuarios_participantes_canal_origem ?? 0,
+    ),
+    usuariosSemCanalOrigem: Number(resumoRow?.usuarios_sem_canal_origem ?? 0),
     setoresAtivos: Number(resumoRow?.setores_ativos ?? 0),
-    setoresParticipantes: Number(resumoRow?.setores_participantes ?? 0),
-    setoresSemCadastro: Number(resumoRow?.setores_sem_cadastro ?? 0),
+    setoresParticipantesClassificacao: Number(
+      resumoRow?.setores_participantes_classificacao ?? 0,
+    ),
+    setoresSemClassificacao: Number(resumoRow?.setores_sem_classificacao ?? 0),
+    setoresParticipantesCanalOrigem: Number(
+      resumoRow?.setores_participantes_canal_origem ?? 0,
+    ),
+    setoresSemCanalOrigem: Number(resumoRow?.setores_sem_canal_origem ?? 0),
   };
 
   const usuarios: DashboardUsuarioAdesaoCRM[] = usuariosRows.map((row) => ({
     usuarioId: Number(row.usuario_id),
     nomeUsuario: row.nome_usuario,
     setor: row.setor,
-    quantidadeAtivas: Number(row.quantidade_ativas),
-    ultimoCadastro: dataIso(row.ultimo_cadastro),
+    classificacoesAtivas: Number(row.classificacoes_ativas),
+    canaisOrigensAtivos: Number(row.canais_origens_ativos),
+    ultimaClassificacao: dataIso(row.ultima_classificacao),
+    ultimoCanalOrigem: dataIso(row.ultimo_canal_origem),
   }));
 
   const setores: DashboardSetorAdesaoCRM[] = setoresRows.map((row) => ({
     setor: row.setor,
     totalUsuarios: Number(row.total_usuarios),
-    usuariosParticipantes: Number(row.usuarios_participantes),
-    usuariosSemCadastro: Number(row.usuarios_sem_cadastro),
-    totalTabulacoes: Number(row.total_tabulacoes),
-    ultimoCadastro: dataIso(row.ultimo_cadastro),
+    usuariosParticipantesClassificacao: Number(
+      row.usuarios_participantes_classificacao,
+    ),
+    usuariosSemClassificacao: Number(row.usuarios_sem_classificacao),
+    usuariosParticipantesCanalOrigem: Number(
+      row.usuarios_participantes_canal_origem,
+    ),
+    usuariosSemCanalOrigem: Number(row.usuarios_sem_canal_origem),
+    totalClassificacoes: Number(row.total_classificacoes),
+    totalCanaisOrigens: Number(row.total_canais_origens),
+    ultimaClassificacao: dataIso(row.ultima_classificacao),
+    ultimoCanalOrigem: dataIso(row.ultimo_canal_origem),
   }));
 
   return {
