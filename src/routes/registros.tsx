@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
+import { CanaisOrigensTable } from "@/components/CanaisOrigensTable";
 import { ExportButton } from "@/components/ExportButton";
 import { SearchSelect, SearchTextSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
@@ -23,6 +24,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  excluirCanalOrigemCRM,
+  listarTodosCanaisOrigensCRM,
+  type CanalOrigemRegistradoCRM,
+  type FiltrosCanalOrigemCRM,
+  type StatusCanalOrigem,
+} from "@/lib/canal-origem.functions";
 import { carregarCadastros } from "@/lib/cadastros";
 import {
   atualizarCriticidadeTabulacaoCRM,
@@ -55,7 +63,7 @@ export const Route = createFileRoute("/registros")({
   component: () => <AppShell>{(id) => <Registros id={id} />}</AppShell>,
 });
 
-const filtrosIniciais: FiltrosTabulacoesCRM = {
+const filtrosClassificacaoIniciais: FiltrosTabulacoesCRM = {
   tipo: null,
   assunto: null,
   subassunto: null,
@@ -67,14 +75,29 @@ const filtrosIniciais: FiltrosTabulacoesCRM = {
   status: "ativas",
 };
 
+const filtrosCanalOrigemIniciais: FiltrosCanalOrigemCRM = {
+  canal: null,
+  origem: null,
+  usuario: null,
+  setor: "",
+  status: "ativas",
+};
+
 function Registros({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"minhas" | "todas">("minhas");
-  const [filtros, setFiltros] = useState<FiltrosTabulacoesCRM>(filtrosIniciais);
+  const [view, setView] = useState<"classificacao" | "canal-origem">("classificacao");
+  const [filtrosClassificacao, setFiltrosClassificacao] =
+    useState<FiltrosTabulacoesCRM>(filtrosClassificacaoIniciais);
+  const [filtrosCanalOrigem, setFiltrosCanalOrigem] =
+    useState<FiltrosCanalOrigemCRM>(filtrosCanalOrigemIniciais);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
-  const [del, setDel] = useState<TabulacaoCRM | null>(null);
+
+  const [delClassificacao, setDelClassificacao] = useState<TabulacaoCRM | null>(null);
+  const [delCanalOrigem, setDelCanalOrigem] =
+    useState<CanalOrigemRegistradoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
+
   const [editando, setEditando] = useState<TabulacaoCRM | null>(null);
   const [criticidadeEdicao, setCriticidadeEdicao] = useState<number | null>(null);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
@@ -89,26 +112,40 @@ function Registros({ id }: { id: Identidade }) {
     queryKey: ["filtros-usuarios-setores"],
     queryFn: listarUsuariosSetoresCRM,
     staleTime: 5 * 60_000,
-    enabled: view === "todas",
   });
 
-  useEffect(() => {
-    setPage(0);
-  }, [view, filtros, pageSize]);
-
-  const query = useQuery({
-    queryKey: ["registros", view, filtros, page, pageSize],
+  const classificacoes = useQuery({
+    queryKey: ["registros", "classificacao", filtrosClassificacao, page, pageSize],
     placeholderData: keepPreviousData,
+    enabled: view === "classificacao",
     queryFn: () =>
       listarTabulacoesCRM({
         data: {
-          somenteMinhas: view === "minhas",
-          filtros,
+          somenteMinhas: false,
+          filtros: filtrosClassificacao,
           page,
           pageSize,
         },
       }),
   });
+
+  const canaisOrigens = useQuery({
+    queryKey: ["registros-canal-origem", filtrosCanalOrigem, page, pageSize],
+    placeholderData: keepPreviousData,
+    enabled: view === "canal-origem",
+    queryFn: () =>
+      listarTodosCanaisOrigensCRM({
+        data: {
+          filtros: filtrosCanalOrigem,
+          page,
+          pageSize,
+        },
+      }),
+  });
+
+  useEffect(() => {
+    setPage(0);
+  }, [view, filtrosClassificacao, filtrosCanalOrigem, pageSize]);
 
   const usuarios = useMemo(
     () =>
@@ -131,7 +168,7 @@ function Registros({ id }: { id: Identidade }) {
   const statusOptions = useMemo(
     () => [
       { id: "ativas", nome: "Ativas" },
-      { id: "excluidas", nome: "Excluídas" },
+      { id: "excluidas", nome: "Inativas" },
     ],
     [],
   );
@@ -139,27 +176,45 @@ function Registros({ id }: { id: Identidade }) {
   async function invalidarDados() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["registros-canal-origem"] }),
       queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
       queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
       queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
     ]);
   }
 
-  async function excluir() {
-    if (!del) return;
+  async function excluirClassificacao() {
+    if (!delClassificacao) return;
 
     setDeleting(true);
 
     try {
-      await excluirTabulacaoCRM({ data: { id: del.id_registro } });
-      toast.success("Registro marcado como excluído.");
-      setDel(null);
+      await excluirTabulacaoCRM({ data: { id: delClassificacao.id_registro } });
+      toast.success("Registro de Classificação marcado como inativo.");
+      setDelClassificacao(null);
       await invalidarDados();
     } catch (error) {
       console.error(error);
-      toast.error(
-        error instanceof Error ? error.message : "Não foi possível excluir.",
-      );
+      toast.error(error instanceof Error ? error.message : "Não foi possível excluir.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function excluirCanalOrigem() {
+    if (!delCanalOrigem) return;
+
+    setDeleting(true);
+
+    try {
+      await excluirCanalOrigemCRM({ data: { id: delCanalOrigem.id_registro } });
+      toast.success("Registro de Canal e Origem marcado como inativo.");
+      setDelCanalOrigem(null);
+      await invalidarDados();
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Não foi possível excluir.");
     } finally {
       setDeleting(false);
     }
@@ -193,33 +248,30 @@ function Registros({ id }: { id: Identidade }) {
       await invalidarDados();
     } catch (error) {
       console.error(error);
-      toast.error(
-        error instanceof Error ? error.message : "Não foi possível editar.",
-      );
+      toast.error(error instanceof Error ? error.message : "Não foi possível editar.");
     } finally {
       setSalvandoEdicao(false);
     }
   }
 
-  function setFiltro<K extends keyof FiltrosTabulacoesCRM>(
+  function setFiltroClassificacao<K extends keyof FiltrosTabulacoesCRM>(
     key: K,
     value: FiltrosTabulacoesCRM[K],
   ) {
-    setFiltros((current) => ({ ...current, [key]: value }));
+    setFiltrosClassificacao((current) => ({ ...current, [key]: value }));
   }
 
-  function trocarView(value: string) {
-    setView(value as "minhas" | "todas");
-    setFiltros((current) => ({
-      ...current,
-      setor: "",
-      usuario: null,
-    }));
+  function setFiltroCanalOrigem<K extends keyof FiltrosCanalOrigemCRM>(
+    key: K,
+    value: FiltrosCanalOrigemCRM[K],
+  ) {
+    setFiltrosCanalOrigem((current) => ({ ...current, [key]: value }));
   }
 
-  const total = query.data?.count ?? 0;
-  const pages = Math.max(1, Math.ceil(total / pageSize));
   const cad = cadastros.data;
+  const queryAtual = view === "classificacao" ? classificacoes : canaisOrigens;
+  const total = queryAtual.data?.count ?? 0;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
 
   useEffect(() => {
     if (page > 0 && page >= pages) {
@@ -228,10 +280,14 @@ function Registros({ id }: { id: Identidade }) {
   }, [page, pages]);
 
   useEffect(() => {
-    if (cad && !cad.configuracao.exibirDetalheOcorrencia && filtros.detalhe != null) {
-      setFiltro("detalhe", null);
+    if (
+      cad &&
+      !cad.configuracao.exibirDetalheOcorrencia &&
+      filtrosClassificacao.detalhe != null
+    ) {
+      setFiltroClassificacao("detalhe", null);
     }
-  }, [cad, filtros.detalhe]);
+  }, [cad, filtrosClassificacao.detalhe]);
 
   return (
     <div className="space-y-4">
@@ -239,55 +295,69 @@ function Registros({ id }: { id: Identidade }) {
         <div>
           <h1 className="text-xl font-semibold">Tabulações Registradas</h1>
           <p className="text-sm text-muted-foreground">
-            Consulte registros ativos e excluídos. Registros excluídos nunca são exportados.
+            Consulte Classificações e registros de Canal e Origem. Todos os filtros são opcionais e o status inicia em Ativas.
           </p>
         </div>
 
         {cad && (
           <ExportButton
-            somenteMinhas={view === "minhas"}
-            filtros={filtros}
+            tipo={view}
+            filtrosClassificacao={
+              view === "classificacao" ? filtrosClassificacao : undefined
+            }
+            filtrosCanalOrigem={
+              view === "canal-origem" ? filtrosCanalOrigem : undefined
+            }
             mostrarDetalhe={cad.configuracao.exibirDetalheOcorrencia}
           />
         )}
       </div>
 
-      <Tabs value={view} onValueChange={trocarView}>
+      <Tabs
+        value={view}
+        onValueChange={(value) =>
+          setView(value as "classificacao" | "canal-origem")
+        }
+      >
         <TabsList>
-          <TabsTrigger value="minhas">Minhas Tabulações</TabsTrigger>
-          <TabsTrigger value="todas">Todas as Tabulações</TabsTrigger>
+          <TabsTrigger value="classificacao">
+            Todas as tabulações - Classificação
+          </TabsTrigger>
+          <TabsTrigger value="canal-origem">
+            Todas as tabulações - Canal e Origem
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
       <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        {cad && (
+        {view === "classificacao" && cad && (
           <>
             <SearchSelect
               placeholder="Tipo de Ocorrência"
               options={cad.tipo}
-              value={filtros.tipo}
-              onChange={(value) => setFiltro("tipo", value)}
+              value={filtrosClassificacao.tipo}
+              onChange={(value) => setFiltroClassificacao("tipo", value)}
               clearable
             />
             <SearchSelect
               placeholder="Assunto"
               options={cad.assunto}
-              value={filtros.assunto}
-              onChange={(value) => setFiltro("assunto", value)}
+              value={filtrosClassificacao.assunto}
+              onChange={(value) => setFiltroClassificacao("assunto", value)}
               clearable
             />
             <SearchSelect
               placeholder="Subassunto"
               options={cad.subassunto}
-              value={filtros.subassunto}
-              onChange={(value) => setFiltro("subassunto", value)}
+              value={filtrosClassificacao.subassunto}
+              onChange={(value) => setFiltroClassificacao("subassunto", value)}
               clearable
             />
             <SearchSelect
               placeholder="Área de Interesse"
               options={cad.area}
-              value={filtros.area}
-              onChange={(value) => setFiltro("area", value)}
+              value={filtrosClassificacao.area}
+              onChange={(value) => setFiltroClassificacao("area", value)}
               clearable
             />
 
@@ -295,8 +365,8 @@ function Registros({ id }: { id: Identidade }) {
               <SearchSelect
                 placeholder="Detalhe da Ocorrência"
                 options={cad.detalhe}
-                value={filtros.detalhe}
-                onChange={(value) => setFiltro("detalhe", value)}
+                value={filtrosClassificacao.detalhe}
+                onChange={(value) => setFiltroClassificacao("detalhe", value)}
                 clearable
               />
             )}
@@ -304,51 +374,112 @@ function Registros({ id }: { id: Identidade }) {
             <SearchSelect
               placeholder="Grau de Criticidade"
               options={cad.criticidade}
-              value={filtros.criticidade}
-              onChange={(value) => setFiltro("criticidade", value)}
+              value={filtrosClassificacao.criticidade}
+              onChange={(value) => setFiltroClassificacao("criticidade", value)}
               clearable
             />
-          </>
-        )}
-
-        {view === "todas" && (
-          <>
             <SearchTextSelect
               placeholder="Setor"
               options={setores}
-              value={filtros.setor || null}
-              onChange={(value) => setFiltro("setor", value ?? "")}
+              value={filtrosClassificacao.setor || null}
+              onChange={(value) => setFiltroClassificacao("setor", value ?? "")}
               clearable
             />
-
             <SearchSelect
               placeholder="Usuário"
               options={usuarios}
-              value={filtros.usuario}
-              onChange={(value) => setFiltro("usuario", value)}
+              value={filtrosClassificacao.usuario}
+              onChange={(value) => setFiltroClassificacao("usuario", value)}
               clearable
             />
+            <SearchTextSelect
+              placeholder="Status"
+              options={statusOptions}
+              value={
+                filtrosClassificacao.status === "todas"
+                  ? null
+                  : filtrosClassificacao.status
+              }
+              onChange={(value) =>
+                setFiltroClassificacao(
+                  "status",
+                  (value ?? "todas") as StatusTabulacao,
+                )
+              }
+              clearable
+            />
+            <Button
+              variant="outline"
+              onClick={() =>
+                setFiltrosClassificacao({ ...filtrosClassificacaoIniciais })
+              }
+            >
+              Limpar filtros
+            </Button>
           </>
         )}
 
-        <SearchTextSelect
-          placeholder="Ativas e excluídas"
-          options={statusOptions}
-          value={filtros.status === "todas" ? null : filtros.status}
-          onChange={(value) =>
-            setFiltro("status", (value ?? "todas") as StatusTabulacao)
-          }
-          clearable
-        />
-
-        <Button variant="outline" onClick={() => setFiltros({ ...filtrosIniciais })}>
-          Limpar filtros
-        </Button>
+        {view === "canal-origem" && cad && (
+          <>
+            <SearchSelect
+              placeholder="Canal"
+              options={cad.canal}
+              value={filtrosCanalOrigem.canal}
+              onChange={(value) => setFiltroCanalOrigem("canal", value)}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Origem"
+              options={cad.origem}
+              value={filtrosCanalOrigem.origem}
+              onChange={(value) => setFiltroCanalOrigem("origem", value)}
+              clearable
+            />
+            <SearchTextSelect
+              placeholder="Setor"
+              options={setores}
+              value={filtrosCanalOrigem.setor || null}
+              onChange={(value) => setFiltroCanalOrigem("setor", value ?? "")}
+              clearable
+            />
+            <SearchSelect
+              placeholder="Usuário"
+              options={usuarios}
+              value={filtrosCanalOrigem.usuario}
+              onChange={(value) => setFiltroCanalOrigem("usuario", value)}
+              clearable
+            />
+            <SearchTextSelect
+              placeholder="Status"
+              options={statusOptions}
+              value={
+                filtrosCanalOrigem.status === "todas"
+                  ? null
+                  : filtrosCanalOrigem.status
+              }
+              onChange={(value) =>
+                setFiltroCanalOrigem(
+                  "status",
+                  (value ?? "todas") as StatusCanalOrigem,
+                )
+              }
+              clearable
+            />
+            <Button
+              variant="outline"
+              onClick={() =>
+                setFiltrosCanalOrigem({ ...filtrosCanalOrigemIniciais })
+              }
+            >
+              Limpar filtros
+            </Button>
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <div className="text-muted-foreground">
-          {query.isFetching ? "Atualizando..." : `${total} registro(s) encontrado(s)`}
+          {queryAtual.isFetching ? "Atualizando..." : `${total} registro(s) encontrado(s)`}
         </div>
 
         <label className="flex items-center gap-2">
@@ -365,21 +496,27 @@ function Registros({ id }: { id: Identidade }) {
         </label>
       </div>
 
-      {query.isLoading ? (
+      {queryAtual.isLoading ? (
         <div className="flex justify-center rounded-xl border bg-card py-20">
           <Loader2 className="animate-spin text-primary" />
         </div>
-      ) : query.isError ? (
+      ) : queryAtual.isError ? (
         <div className="rounded-xl border bg-card p-6 text-sm text-destructive">
           Não foi possível consultar os registros no PostgreSQL.
         </div>
-      ) : query.data?.rows.length ? (
+      ) : view === "classificacao" && classificacoes.data?.rows.length ? (
         <TabulacoesTable
-          rows={query.data.rows}
+          rows={classificacoes.data.rows}
           usuarioAtualId={id.usuarioId}
-          onExcluir={setDel}
+          onExcluir={setDelClassificacao}
           onEditarCriticidade={abrirEdicaoCriticidade}
           mostrarDetalhe={cad?.configuracao.exibirDetalheOcorrencia ?? false}
+        />
+      ) : view === "canal-origem" && canaisOrigens.data?.rows.length ? (
+        <CanaisOrigensTable
+          rows={canaisOrigens.data.rows}
+          usuarioAtualId={id.usuarioId}
+          onExcluir={setDelCanalOrigem}
         />
       ) : (
         <div className="rounded-xl border bg-card py-10 text-center text-sm text-muted-foreground">
@@ -415,18 +552,40 @@ function Registros({ id }: { id: Identidade }) {
         </div>
       </div>
 
-      <AlertDialog open={!!del} onOpenChange={(open) => !open && setDel(null)}>
+      <AlertDialog
+        open={!!delClassificacao}
+        onOpenChange={(open) => !open && setDelClassificacao(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir esta tabulação?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir esta Classificação?</AlertDialogTitle>
             <AlertDialogDescription>
-              O registro será marcado como excluído e deixará de ser considerado no
-              Dashboard e nas exportações. ID: <b>{del?.id_registro}</b>.
+              O registro será marcado como inativo e deixará de ser considerado no Dashboard e nas exportações. ID: <b>{delClassificacao?.id_registro}</b>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={excluir} disabled={deleting}>
+            <AlertDialogAction onClick={excluirClassificacao} disabled={deleting}>
+              {deleting ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!delCanalOrigem}
+        onOpenChange={(open) => !open && setDelCanalOrigem(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este Canal e Origem?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O registro será marcado como inativo e deixará de ser considerado no Dashboard e nas exportações. ID: <b>{delCanalOrigem?.id_registro}</b>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={excluirCanalOrigem} disabled={deleting}>
               {deleting ? "Excluindo..." : "Excluir"}
             </AlertDialogAction>
           </AlertDialogFooter>
