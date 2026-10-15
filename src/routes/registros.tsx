@@ -21,9 +21,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { carregarCadastros } from "@/lib/cadastros";
 import {
+  atualizarCriticidadeTabulacaoCRM,
   excluirTabulacaoCRM,
   listarTabulacoesCRM,
   listarUsuariosSetoresCRM,
@@ -54,8 +56,6 @@ export const Route = createFileRoute("/registros")({
 });
 
 const filtrosIniciais: FiltrosTabulacoesCRM = {
-  canal: null,
-  origem: null,
   tipo: null,
   assunto: null,
   subassunto: null,
@@ -75,6 +75,9 @@ function Registros({ id }: { id: Identidade }) {
   const [pageSize, setPageSize] = useState(50);
   const [del, setDel] = useState<TabulacaoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editando, setEditando] = useState<TabulacaoCRM | null>(null);
+  const [criticidadeEdicao, setCriticidadeEdicao] = useState<number | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   const cadastros = useQuery({
     queryKey: ["cadastros"],
@@ -133,6 +136,15 @@ function Registros({ id }: { id: Identidade }) {
     [],
   );
 
+  async function invalidarDados() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+    ]);
+  }
+
   async function excluir() {
     if (!del) return;
 
@@ -142,13 +154,7 @@ function Registros({ id }: { id: Identidade }) {
       await excluirTabulacaoCRM({ data: { id: del.id_registro } });
       toast.success("Registro marcado como excluído.");
       setDel(null);
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["registros"] }),
-        queryClient.invalidateQueries({ queryKey: ["recentes"] }),
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
-        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
-      ]);
+      await invalidarDados();
     } catch (error) {
       console.error(error);
       toast.error(
@@ -156,6 +162,42 @@ function Registros({ id }: { id: Identidade }) {
       );
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function abrirEdicaoCriticidade(row: TabulacaoCRM) {
+    const atual = cadastros.data?.criticidade.find(
+      (item) => item.nome === row.criticidade,
+    );
+
+    setEditando(row);
+    setCriticidadeEdicao(atual?.id ?? null);
+  }
+
+  async function salvarCriticidade() {
+    if (!editando || criticidadeEdicao == null) return;
+
+    setSalvandoEdicao(true);
+
+    try {
+      await atualizarCriticidadeTabulacaoCRM({
+        data: {
+          id: editando.id_registro,
+          criticidade: criticidadeEdicao,
+        },
+      });
+
+      toast.success("Grau de Criticidade atualizado.");
+      setEditando(null);
+      setCriticidadeEdicao(null);
+      await invalidarDados();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível editar.",
+      );
+    } finally {
+      setSalvandoEdicao(false);
     }
   }
 
@@ -185,6 +227,12 @@ function Registros({ id }: { id: Identidade }) {
     }
   }, [page, pages]);
 
+  useEffect(() => {
+    if (cad && !cad.configuracao.exibirDetalheOcorrencia && filtros.detalhe != null) {
+      setFiltro("detalhe", null);
+    }
+  }, [cad, filtros.detalhe]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -195,7 +243,13 @@ function Registros({ id }: { id: Identidade }) {
           </p>
         </div>
 
-        <ExportButton somenteMinhas={view === "minhas"} filtros={filtros} />
+        {cad && (
+          <ExportButton
+            somenteMinhas={view === "minhas"}
+            filtros={filtros}
+            mostrarDetalhe={cad.configuracao.exibirDetalheOcorrencia}
+          />
+        )}
       </div>
 
       <Tabs value={view} onValueChange={trocarView}>
@@ -208,20 +262,6 @@ function Registros({ id }: { id: Identidade }) {
       <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         {cad && (
           <>
-            <SearchSelect
-              placeholder="Canal"
-              options={cad.canal}
-              value={filtros.canal}
-              onChange={(value) => setFiltro("canal", value)}
-              clearable
-            />
-            <SearchSelect
-              placeholder="Origem"
-              options={cad.origem}
-              value={filtros.origem}
-              onChange={(value) => setFiltro("origem", value)}
-              clearable
-            />
             <SearchSelect
               placeholder="Tipo de Ocorrência"
               options={cad.tipo}
@@ -250,13 +290,17 @@ function Registros({ id }: { id: Identidade }) {
               onChange={(value) => setFiltro("area", value)}
               clearable
             />
-            <SearchSelect
-              placeholder="Detalhe da Ocorrência"
-              options={cad.detalhe}
-              value={filtros.detalhe}
-              onChange={(value) => setFiltro("detalhe", value)}
-              clearable
-            />
+
+            {cad.configuracao.exibirDetalheOcorrencia && (
+              <SearchSelect
+                placeholder="Detalhe da Ocorrência"
+                options={cad.detalhe}
+                value={filtros.detalhe}
+                onChange={(value) => setFiltro("detalhe", value)}
+                clearable
+              />
+            )}
+
             <SearchSelect
               placeholder="Grau de Criticidade"
               options={cad.criticidade}
@@ -334,6 +378,8 @@ function Registros({ id }: { id: Identidade }) {
           rows={query.data.rows}
           usuarioAtualId={id.usuarioId}
           onExcluir={setDel}
+          onEditarCriticidade={abrirEdicaoCriticidade}
+          mostrarDetalhe={cad?.configuracao.exibirDetalheOcorrencia ?? false}
         />
       ) : (
         <div className="rounded-xl border bg-card py-10 text-center text-sm text-muted-foreground">
@@ -382,6 +428,44 @@ function Registros({ id }: { id: Identidade }) {
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={excluir} disabled={deleting}>
               {deleting ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!editando}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditando(null);
+            setCriticidadeEdicao(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Editar Grau de Criticidade</AlertDialogTitle>
+            <AlertDialogDescription>
+              Somente a criticidade do registro ID <b>{editando?.id_registro}</b> será alterada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-1.5">
+            <Label>Grau de Criticidade</Label>
+            <SearchSelect
+              options={cad?.criticidade ?? []}
+              value={criticidadeEdicao}
+              onChange={setCriticidadeEdicao}
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoEdicao}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={salvarCriticidade}
+              disabled={salvandoEdicao || criticidadeEdicao == null}
+            >
+              {salvandoEdicao ? "Salvando..." : "Salvar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
