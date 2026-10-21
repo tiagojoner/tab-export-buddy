@@ -531,20 +531,28 @@ export const inserirClassificacoesCRM = createServerFn({
       ).values(),
     );
 
-    const payload = JSON.stringify(
-      combinacoes.map((item) => ({
-        subassunto_id: item.subassuntoId,
-        detalhe_id: item.detalheId,
-      })),
-    );
+    if (combinacoes.length === 0) {
+      throw new Error("Nenhuma combinação de Subassunto/Detalhe foi informada.");
+    }
+
+    // A função de banco V3 recebe dois arrays posicionais. O valor 0 representa
+    // NULL e é convertido no PostgreSQL. Isso evita depender da serialização
+    // JSON entre o client/server function e o banco.
+    const subassuntosLiteral = `{${combinacoes
+      .map((item) => item.subassuntoId ?? 0)
+      .join(",")}}`;
+    const detalhesLiteral = `{${combinacoes
+      .map((item) => item.detalheId ?? 0)
+      .join(",")}}`;
 
     const rows = await sql<{ inseridos: number; duplicados: number }[]>`
       SELECT inseridos, duplicados
-      FROM crm.inserir_classificacoes_v2(
+      FROM crm.inserir_classificacoes_v3(
         ${chave},
         ${data.tipo},
         ${data.assunto},
-        ${payload}::jsonb,
+        ${subassuntosLiteral}::bigint[],
+        ${detalhesLiteral}::bigint[],
         ${data.area},
         ${data.criticidade}
       )
