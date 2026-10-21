@@ -279,16 +279,6 @@ function Registros({ id }: { id: Identidade }) {
     }
   }, [page, pages]);
 
-  useEffect(() => {
-    if (
-      cad &&
-      !cad.configuracao.exibirDetalheOcorrencia &&
-      filtrosClassificacao.detalhe != null
-    ) {
-      setFiltroClassificacao("detalhe", null);
-    }
-  }, [cad, filtrosClassificacao.detalhe]);
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -308,7 +298,6 @@ function Registros({ id }: { id: Identidade }) {
             filtrosCanalOrigem={
               view === "canal-origem" ? filtrosCanalOrigem : undefined
             }
-            mostrarDetalhe={cad.configuracao.exibirDetalheOcorrencia}
           />
         )}
       </div>
@@ -361,15 +350,13 @@ function Registros({ id }: { id: Identidade }) {
               clearable
             />
 
-            {cad.configuracao.exibirDetalheOcorrencia && (
-              <SearchSelect
-                placeholder="Detalhe da Ocorrência"
-                options={cad.detalhe}
-                value={filtrosClassificacao.detalhe}
-                onChange={(value) => setFiltroClassificacao("detalhe", value)}
-                clearable
-              />
-            )}
+            <SearchSelect
+              placeholder="Detalhe da Ocorrência"
+              options={cad.detalhe}
+              value={filtrosClassificacao.detalhe}
+              onChange={(value) => setFiltroClassificacao("detalhe", value)}
+              clearable
+            />
 
             <SearchSelect
               placeholder="Grau de Criticidade"
@@ -510,7 +497,6 @@ function Registros({ id }: { id: Identidade }) {
           usuarioAtualId={id.usuarioId}
           onExcluir={setDelClassificacao}
           onEditarCriticidade={abrirEdicaoCriticidade}
-          mostrarDetalhe={cad?.configuracao.exibirDetalheOcorrencia ?? false}
         />
       ) : view === "canal-origem" && canaisOrigens.data?.rows.length ? (
         <CanaisOrigensTable
