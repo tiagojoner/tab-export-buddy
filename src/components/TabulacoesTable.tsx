@@ -15,101 +15,124 @@ export function TabulacoesTable({
   usuarioAtualId,
   onExcluir,
   onEditarCriticidade,
-  mostrarDetalhe,
   mostrarAuditoriaExclusao = true,
 }: {
   rows: TabulacaoCRM[];
   usuarioAtualId: number;
   onExcluir?: (row: TabulacaoCRM) => void;
   onEditarCriticidade?: (row: TabulacaoCRM) => void;
-  mostrarDetalhe: boolean;
   mostrarAuditoriaExclusao?: boolean;
 }) {
-  const larguraBase = mostrarDetalhe ? 1780 : 1510;
+  const larguraBase = 1810;
   const larguraAuditoria = mostrarAuditoriaExclusao ? 560 : 0;
   const minWidth = larguraBase + larguraAuditoria;
 
   return (
     <div className="max-h-[62vh] w-full overflow-auto rounded-xl border bg-card">
       <table className="w-full text-[11.5px] leading-4" style={{ minWidth }}>
-        <thead className="sticky top-0 z-40 bg-secondary text-left text-secondary-foreground">
+        <thead className="sticky top-0 z-20 bg-secondary text-left text-secondary-foreground">
           <tr>
-            <th className="sticky left-0 z-50 w-[110px] min-w-[110px] bg-secondary px-2 py-2 font-medium">
+            <th className="w-[120px] min-w-[120px] px-2 py-2 font-medium">
               Tipo
             </th>
-            <th className="sticky left-[110px] z-50 w-[270px] min-w-[270px] bg-secondary px-2 py-2 font-medium">
-              Assunto
-            </th>
-            <th className="sticky left-[380px] z-50 w-[310px] min-w-[310px] bg-secondary px-2 py-2 font-medium">
-              Subassunto
-            </th>
-            <th className="sticky left-[690px] z-50 w-[240px] min-w-[240px] bg-secondary px-2 py-2 font-medium">
+            <th className="w-[250px] min-w-[250px] px-2 py-2 font-medium">
               Área de Interesse
             </th>
-
-            {mostrarDetalhe && (
-              <th className="min-w-[260px] px-2 py-2 font-medium">
-                Detalhe da Ocorrência
-              </th>
-            )}
-
-            <th className="min-w-[135px] px-2 py-2 font-medium">Grau de Criticidade</th>
-            <th className="min-w-[165px] px-2 py-2 font-medium">Nome Usuário</th>
-            <th className="min-w-[155px] px-2 py-2 font-medium">Setor Usuário</th>
-            <th className="min-w-[150px] px-2 py-2 font-medium">Data/Hora Criação</th>
+            <th className="w-[285px] min-w-[285px] px-2 py-2 font-medium">
+              Assunto
+            </th>
+            <th className="w-[320px] min-w-[320px] px-2 py-2 font-medium">
+              Subassunto
+            </th>
+            <th className="w-[320px] min-w-[320px] px-2 py-2 font-medium">
+              Detalhe da Ocorrência
+            </th>
+            <th className="min-w-[145px] px-2 py-2 font-medium">
+              Grau de Criticidade
+            </th>
+            <th className="min-w-[175px] px-2 py-2 font-medium">
+              Nome Usuário
+            </th>
+            <th className="min-w-[165px] px-2 py-2 font-medium">
+              Setor Usuário
+            </th>
+            <th className="min-w-[155px] px-2 py-2 font-medium">
+              Data/Hora Criação
+            </th>
 
             {mostrarAuditoriaExclusao && (
               <>
                 <th className="min-w-[85px] px-2 py-2 font-medium">Status</th>
-                <th className="min-w-[175px] px-2 py-2 font-medium">Excluído por</th>
-                <th className="min-w-[150px] px-2 py-2 font-medium">Setor exclusão</th>
-                <th className="min-w-[150px] px-2 py-2 font-medium">Data/Hora exclusão</th>
+                <th className="min-w-[175px] px-2 py-2 font-medium">
+                  Excluído por
+                </th>
+                <th className="min-w-[150px] px-2 py-2 font-medium">
+                  Setor exclusão
+                </th>
+                <th className="min-w-[150px] px-2 py-2 font-medium">
+                  Data/Hora exclusão
+                </th>
               </>
             )}
 
-            <th className="min-w-[92px] px-2 py-2 text-center font-medium">Ações</th>
+            <th className="min-w-[92px] px-2 py-2 text-center font-medium">
+              Ações
+            </th>
           </tr>
         </thead>
 
         <tbody>
           {rows.map((row) => {
-            const bg = row.excluido ? "bg-muted" : "bg-card";
             const registroProprio = row.usuario_id === usuarioAtualId;
             const podeExcluir = !row.excluido && registroProprio && onExcluir;
-            const podeEditar = !row.excluido && registroProprio && onEditarCriticidade;
+            const podeEditar =
+              !row.excluido && registroProprio && onEditarCriticidade;
 
             return (
-              <tr key={row.id_registro} className="border-t align-top">
-                <td className={`sticky left-0 z-20 w-[110px] min-w-[110px] ${bg} px-2 py-2`}>
-                  {row.tipo_ocorrencia}
+              <tr
+                key={row.id_registro}
+                className={
+                  row.excluido
+                    ? "border-t bg-muted align-top"
+                    : "border-t bg-card align-top"
+                }
+              >
+                <td className="px-2 py-2">{row.tipo_ocorrencia}</td>
+                <td className="px-2 py-2">{row.area_interesse}</td>
+                <td className="px-2 py-2">{row.assunto}</td>
+                <td className="px-2 py-2">{row.subassunto ?? "—"}</td>
+                <td className="px-2 py-2">
+                  {row.detalhe_ocorrencia ?? "—"}
                 </td>
-                <td className={`sticky left-[110px] z-20 w-[270px] min-w-[270px] ${bg} px-2 py-2`}>
-                  {row.assunto}
-                </td>
-                <td className={`sticky left-[380px] z-20 w-[310px] min-w-[310px] ${bg} px-2 py-2`}>
-                  {row.subassunto ?? "—"}
-                </td>
-                <td className={`sticky left-[690px] z-20 w-[240px] min-w-[240px] ${bg} px-2 py-2`}>
-                  {row.area_interesse}
-                </td>
-
-                {mostrarDetalhe && <td className="px-2 py-2">{row.detalhe_ocorrencia ?? "—"}</td>}
-
                 <td className="px-2 py-2">{row.criticidade}</td>
                 <td className="px-2 py-2">{row.nome_usuario}</td>
                 <td className="px-2 py-2">{row.setor_usuario}</td>
-                <td className="whitespace-nowrap px-2 py-2">{formatarData(row.data_hora_inclusao)}</td>
+                <td className="whitespace-nowrap px-2 py-2">
+                  {formatarData(row.data_hora_inclusao)}
+                </td>
 
                 {mostrarAuditoriaExclusao && (
                   <>
                     <td className="px-2 py-2">
-                      <span className={row.excluido ? "font-medium text-destructive" : "font-medium text-primary"}>
+                      <span
+                        className={
+                          row.excluido
+                            ? "font-medium text-destructive"
+                            : "font-medium text-primary"
+                        }
+                      >
                         {row.excluido ? "Inativo" : "Ativo"}
                       </span>
                     </td>
-                    <td className="px-2 py-2">{row.nome_usuario_exclusao ?? "—"}</td>
-                    <td className="px-2 py-2">{row.setor_usuario_exclusao ?? "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-2">{formatarData(row.data_hora_exclusao)}</td>
+                    <td className="px-2 py-2">
+                      {row.nome_usuario_exclusao ?? "—"}
+                    </td>
+                    <td className="px-2 py-2">
+                      {row.setor_usuario_exclusao ?? "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2">
+                      {formatarData(row.data_hora_exclusao)}
+                    </td>
                   </>
                 )}
 
