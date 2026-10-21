@@ -25,8 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   carregarCadastrosAdminCRM,
   carregarRelacionamentosAssuntoAdminCRM,
+  carregarRelacionamentosSubassuntoAdminCRM,
   salvarCadastroAdminCRM,
   salvarRelacionamentosAssuntoAdminCRM,
+  salvarRelacionamentosSubassuntoAdminCRM,
   type CadastroAdminItem,
   type CadastroAdminTipo,
 } from "@/lib/admin.functions";
@@ -38,7 +40,8 @@ export const Route = createFileRoute("/cadastros")({
       { title: "Cadastro — Gestor de Tabulações CRM" },
       {
         name: "description",
-        content: "Gestão administrativa de Assuntos, Subassuntos e relacionamentos.",
+        content:
+          "Gestão administrativa de Assuntos, Subassuntos, Detalhes da Ocorrência e seus relacionamentos.",
       },
     ],
   }),
@@ -57,19 +60,128 @@ function normalizar(value: string) {
     .toLowerCase();
 }
 
+function rotuloCadastro(cadastro: CadastroAdminTipo) {
+  if (cadastro === "assunto") return "Assunto";
+  if (cadastro === "subassunto") return "Subassunto";
+  return "Detalhe da Ocorrência";
+}
+
+function ListaCadastro({
+  cadastro,
+  items,
+  busca,
+  onBusca,
+  onNovo,
+  onEditar,
+}: {
+  cadastro: CadastroAdminTipo;
+  items: CadastroAdminItem[];
+  busca: string;
+  onBusca: (value: string) => void;
+  onNovo: (cadastro: CadastroAdminTipo) => void;
+  onEditar: (cadastro: CadastroAdminTipo, item: CadastroAdminItem) => void;
+}) {
+  const rotulo = rotuloCadastro(cadastro);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Input
+          value={busca}
+          onChange={(event) => onBusca(event.target.value)}
+          placeholder={`Buscar ${rotulo}...`}
+          className="max-w-md"
+        />
+
+        <Button onClick={() => onNovo(cadastro)}>
+          <Plus />
+          Novo {rotulo}
+        </Button>
+      </div>
+
+      <div className="text-sm text-muted-foreground">
+        {items.length} registro(s) encontrado(s)
+      </div>
+
+      <div className="max-h-[62vh] overflow-auto rounded-xl border bg-card">
+        <table className="w-full min-w-[700px] text-sm">
+          <thead className="sticky top-0 z-10 bg-secondary text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium">Nome</th>
+              <th className="w-28 px-3 py-2 font-medium">Status</th>
+              <th className="w-24 px-3 py-2 text-center font-medium">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className="border-t">
+                <td className="px-3 py-2">{item.nome}</td>
+                <td className="px-3 py-2">
+                  <span
+                    className={
+                      item.ativo
+                        ? "font-medium text-primary"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    {item.ativo ? "Ativo" : "Inativo"}
+                  </span>
+                </td>
+                <td className="px-3 py-1 text-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Editar ${item.nome}`}
+                    onClick={() => onEditar(cadastro, item)}
+                  >
+                    <Edit3 className="size-4" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+
+            {items.length === 0 && (
+              <tr>
+                <td
+                  colSpan={3}
+                  className="px-3 py-10 text-center text-muted-foreground"
+                >
+                  Nenhum registro encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function Cadastros({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
   const [aba, setAba] = useState("assunto");
   const [buscaAssunto, setBuscaAssunto] = useState("");
   const [buscaSubassunto, setBuscaSubassunto] = useState("");
+  const [buscaDetalhe, setBuscaDetalhe] = useState("");
+
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [nomeEdicao, setNomeEdicao] = useState("");
   const [ativoEdicao, setAtivoEdicao] = useState(true);
   const [salvandoItem, setSalvandoItem] = useState(false);
 
-  const [assuntoRelacionamento, setAssuntoRelacionamento] = useState<number | null>(null);
-  const [subassuntosRelacionados, setSubassuntosRelacionados] = useState<number[]>([]);
-  const [salvandoRelacionamento, setSalvandoRelacionamento] = useState(false);
+  const [assuntoRelacionamento, setAssuntoRelacionamento] =
+    useState<number | null>(null);
+  const [subassuntosRelacionados, setSubassuntosRelacionados] = useState<
+    number[]
+  >([]);
+  const [salvandoRelacionamentoAssunto, setSalvandoRelacionamentoAssunto] =
+    useState(false);
+
+  const [subassuntoRelacionamento, setSubassuntoRelacionamento] =
+    useState<number | null>(null);
+  const [detalhesRelacionados, setDetalhesRelacionados] = useState<number[]>([]);
+  const [salvandoRelacionamentoDetalhe, setSalvandoRelacionamentoDetalhe] =
+    useState(false);
 
   const dados = useQuery({
     queryKey: ["cadastros-admin"],
@@ -78,12 +190,21 @@ function Cadastros({ id }: { id: Identidade }) {
     staleTime: 60_000,
   });
 
-  const relacionamentos = useQuery({
+  const relacionamentosAssunto = useQuery({
     queryKey: ["relacionamentos-assunto-admin", assuntoRelacionamento],
     enabled: id.perfil === "ADMINISTRADOR" && assuntoRelacionamento != null,
     queryFn: () =>
       carregarRelacionamentosAssuntoAdminCRM({
         data: { assuntoId: assuntoRelacionamento! },
+      }),
+  });
+
+  const relacionamentosSubassunto = useQuery({
+    queryKey: ["relacionamentos-subassunto-admin", subassuntoRelacionamento],
+    enabled: id.perfil === "ADMINISTRADOR" && subassuntoRelacionamento != null,
+    queryFn: () =>
+      carregarRelacionamentosSubassuntoAdminCRM({
+        data: { subassuntoId: subassuntoRelacionamento! },
       }),
   });
 
@@ -93,13 +214,25 @@ function Cadastros({ id }: { id: Identidade }) {
       return;
     }
 
-    if (relacionamentos.data) {
-      setSubassuntosRelacionados(relacionamentos.data);
+    if (relacionamentosAssunto.data) {
+      setSubassuntosRelacionados(relacionamentosAssunto.data);
     }
-  }, [assuntoRelacionamento, relacionamentos.data]);
+  }, [assuntoRelacionamento, relacionamentosAssunto.data]);
+
+  useEffect(() => {
+    if (subassuntoRelacionamento == null) {
+      setDetalhesRelacionados([]);
+      return;
+    }
+
+    if (relacionamentosSubassunto.data) {
+      setDetalhesRelacionados(relacionamentosSubassunto.data);
+    }
+  }, [subassuntoRelacionamento, relacionamentosSubassunto.data]);
 
   const assuntos = dados.data?.assuntos ?? [];
   const subassuntos = dados.data?.subassuntos ?? [];
+  const detalhes = dados.data?.detalhes ?? [];
 
   const assuntosAtivos = useMemo(
     () => assuntos.filter((item) => item.ativo),
@@ -109,6 +242,11 @@ function Cadastros({ id }: { id: Identidade }) {
   const subassuntosAtivos = useMemo(
     () => subassuntos.filter((item) => item.ativo),
     [subassuntos],
+  );
+
+  const detalhesAtivos = useMemo(
+    () => detalhes.filter((item) => item.ativo),
+    [detalhes],
   );
 
   const assuntosFiltrados = useMemo(() => {
@@ -124,6 +262,13 @@ function Cadastros({ id }: { id: Identidade }) {
       ? subassuntos.filter((item) => normalizar(item.nome).includes(termo))
       : subassuntos;
   }, [subassuntos, buscaSubassunto]);
+
+  const detalhesFiltrados = useMemo(() => {
+    const termo = normalizar(buscaDetalhe.trim());
+    return termo
+      ? detalhes.filter((item) => normalizar(item.nome).includes(termo))
+      : detalhes;
+  }, [detalhes, buscaDetalhe]);
 
   if (id.perfil !== "ADMINISTRADOR") {
     return (
@@ -189,30 +334,33 @@ function Cadastros({ id }: { id: Identidade }) {
         return;
       }
 
-      toast.success(
-        `${edicao.cadastro === "assunto" ? "Assunto" : "Subassunto"} salvo com sucesso.`,
-      );
+      toast.success(`${rotuloCadastro(edicao.cadastro)} salvo com sucesso.`);
       setEdicao(null);
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["cadastros-admin"] }),
         queryClient.invalidateQueries({ queryKey: ["cadastros"] }),
         queryClient.invalidateQueries({ queryKey: ["subassuntos-relacionados"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["detalhes-por-subassuntos"],
+        }),
       ]);
     } catch (error) {
       console.error(error);
       toast.error(
-        error instanceof Error ? error.message : "Não foi possível salvar o cadastro.",
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar o cadastro.",
       );
     } finally {
       setSalvandoItem(false);
     }
   }
 
-  async function salvarRelacionamentos() {
+  async function salvarRelacionamentosAssunto() {
     if (assuntoRelacionamento == null) return;
 
-    setSalvandoRelacionamento(true);
+    setSalvandoRelacionamentoAssunto(true);
 
     try {
       const resultado = await salvarRelacionamentosAssuntoAdminCRM({
@@ -227,106 +375,83 @@ function Cadastros({ id }: { id: Identidade }) {
       );
 
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["relacionamentos-assunto-admin"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["relacionamentos-assunto-admin"],
+        }),
         queryClient.invalidateQueries({ queryKey: ["subassuntos-relacionados"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["detalhes-por-subassuntos"],
+        }),
       ]);
     } catch (error) {
       console.error(error);
       toast.error(
-        error instanceof Error ? error.message : "Não foi possível salvar os relacionamentos.",
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar os relacionamentos.",
       );
     } finally {
-      setSalvandoRelacionamento(false);
+      setSalvandoRelacionamentoAssunto(false);
     }
   }
 
-  const ListaCadastro = ({
-    cadastro,
-    items,
-    busca,
-    onBusca,
-  }: {
-    cadastro: CadastroAdminTipo;
-    items: CadastroAdminItem[];
-    busca: string;
-    onBusca: (value: string) => void;
-  }) => (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input
-          value={busca}
-          onChange={(event) => onBusca(event.target.value)}
-          placeholder={`Buscar ${cadastro === "assunto" ? "Assunto" : "Subassunto"}...`}
-          className="max-w-md"
-        />
+  async function salvarRelacionamentosSubassunto() {
+    if (subassuntoRelacionamento == null) return;
 
-        <Button onClick={() => abrirNovo(cadastro)}>
-          <Plus />
-          Novo {cadastro === "assunto" ? "Assunto" : "Subassunto"}
-        </Button>
-      </div>
+    setSalvandoRelacionamentoDetalhe(true);
 
-      <div className="text-sm text-muted-foreground">
-        {items.length} registro(s) encontrado(s)
-      </div>
+    try {
+      const resultado = await salvarRelacionamentosSubassuntoAdminCRM({
+        data: {
+          subassuntoId: subassuntoRelacionamento,
+          detalheIds: detalhesRelacionados,
+        },
+      });
 
-      <div className="max-h-[62vh] overflow-auto rounded-xl border bg-card">
-        <table className="w-full min-w-[700px] text-sm">
-          <thead className="sticky top-0 z-10 bg-secondary text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">Nome</th>
-              <th className="w-28 px-3 py-2 font-medium">Status</th>
-              <th className="w-24 px-3 py-2 text-center font-medium">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-t">
-                <td className="px-3 py-2">{item.nome}</td>
-                <td className="px-3 py-2">
-                  <span className={item.ativo ? "font-medium text-primary" : "text-muted-foreground"}>
-                    {item.ativo ? "Ativo" : "Inativo"}
-                  </span>
-                </td>
-                <td className="px-3 py-1 text-center">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Editar ${item.nome}`}
-                    onClick={() => abrirEdicao(cadastro, item)}
-                  >
-                    <Edit3 className="size-4" />
-                  </Button>
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-3 py-10 text-center text-muted-foreground">
-                  Nenhum registro encontrado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+      toast.success(
+        `${resultado.quantidade} relacionamento(s) salvo(s) para o Subassunto selecionado.`,
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["relacionamentos-subassunto-admin"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["detalhes-por-subassuntos"],
+        }),
+      ]);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar os relacionamentos.",
+      );
+    } finally {
+      setSalvandoRelacionamentoDetalhe(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Cadastro</h1>
         <p className="text-sm text-muted-foreground">
-          Gestão administrativa dos Assuntos, Subassuntos e seus relacionamentos.
+          Gestão administrativa de Assuntos, Subassuntos, Detalhes da Ocorrência e seus relacionamentos.
         </p>
       </div>
 
       <Tabs value={aba} onValueChange={setAba}>
-        <TabsList>
+        <TabsList className="h-auto flex-wrap justify-start">
           <TabsTrigger value="assunto">Assuntos</TabsTrigger>
           <TabsTrigger value="subassunto">Subassuntos</TabsTrigger>
-          <TabsTrigger value="relacionamento">Relacionamentos</TabsTrigger>
+          <TabsTrigger value="detalhe">Detalhes da Ocorrência</TabsTrigger>
+          <TabsTrigger value="rel-assunto-subassunto">
+            Assunto x Subassunto
+          </TabsTrigger>
+          <TabsTrigger value="rel-subassunto-detalhe">
+            Subassunto x Detalhe
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="assunto" className="pt-2">
@@ -335,6 +460,8 @@ function Cadastros({ id }: { id: Identidade }) {
             items={assuntosFiltrados}
             busca={buscaAssunto}
             onBusca={setBuscaAssunto}
+            onNovo={abrirNovo}
+            onEditar={abrirEdicao}
           />
         </TabsContent>
 
@@ -344,10 +471,23 @@ function Cadastros({ id }: { id: Identidade }) {
             items={subassuntosFiltrados}
             busca={buscaSubassunto}
             onBusca={setBuscaSubassunto}
+            onNovo={abrirNovo}
+            onEditar={abrirEdicao}
           />
         </TabsContent>
 
-        <TabsContent value="relacionamento" className="space-y-4 pt-2">
+        <TabsContent value="detalhe" className="pt-2">
+          <ListaCadastro
+            cadastro="detalhe_ocorrencia"
+            items={detalhesFiltrados}
+            busca={buscaDetalhe}
+            onBusca={setBuscaDetalhe}
+            onNovo={abrirNovo}
+            onEditar={abrirEdicao}
+          />
+        </TabsContent>
+
+        <TabsContent value="rel-assunto-subassunto" className="space-y-4 pt-2">
           <div className="rounded-xl border bg-card p-5">
             <div className="max-w-xl space-y-1.5">
               <Label>Assunto *</Label>
@@ -364,7 +504,10 @@ function Cadastros({ id }: { id: Identidade }) {
           </div>
 
           <div className="text-sm text-muted-foreground">
-            {assuntoRelacionamento == null ? 0 : (relacionamentos.data?.length ?? 0)} registro(s) encontrado(s)
+            {assuntoRelacionamento == null
+              ? 0
+              : (relacionamentosAssunto.data?.length ?? 0)}{" "}
+            registro(s) encontrado(s)
           </div>
 
           {assuntoRelacionamento != null && (
@@ -376,7 +519,7 @@ function Cadastros({ id }: { id: Identidade }) {
                 </p>
               </div>
 
-              {relacionamentos.isLoading ? (
+              {relacionamentosAssunto.isLoading ? (
                 <div className="flex justify-center py-12">
                   <Loader2 className="animate-spin text-primary" />
                 </div>
@@ -392,10 +535,75 @@ function Cadastros({ id }: { id: Identidade }) {
 
                   <div className="mt-4 flex justify-end">
                     <Button
-                      onClick={salvarRelacionamentos}
-                      disabled={salvandoRelacionamento}
+                      onClick={salvarRelacionamentosAssunto}
+                      disabled={salvandoRelacionamentoAssunto}
                     >
-                      {salvandoRelacionamento ? (
+                      {salvandoRelacionamentoAssunto ? (
+                        <Loader2 className="animate-spin" />
+                      ) : (
+                        <Save />
+                      )}
+                      Salvar relacionamentos
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="rel-subassunto-detalhe" className="space-y-4 pt-2">
+          <div className="rounded-xl border bg-card p-5">
+            <div className="max-w-xl space-y-1.5">
+              <Label>Subassunto *</Label>
+              <SearchSelect
+                options={subassuntosAtivos}
+                value={subassuntoRelacionamento}
+                onChange={(value) => {
+                  setSubassuntoRelacionamento(value);
+                  setDetalhesRelacionados([]);
+                }}
+                clearable
+              />
+            </div>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            {subassuntoRelacionamento == null
+              ? 0
+              : (relacionamentosSubassunto.data?.length ?? 0)}{" "}
+            registro(s) encontrado(s)
+          </div>
+
+          {subassuntoRelacionamento != null && (
+            <div className="rounded-xl border bg-card p-5">
+              <div className="mb-3">
+                <h2 className="font-semibold">Detalhes da Ocorrência vinculados</h2>
+                <p className="text-sm text-muted-foreground">
+                  Marque todos os Detalhes da Ocorrência que pertencem ao Subassunto selecionado.
+                </p>
+              </div>
+
+              {relacionamentosSubassunto.isLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  <CheckboxMultiSelect
+                    options={detalhesAtivos}
+                    selectedIds={detalhesRelacionados}
+                    onChange={setDetalhesRelacionados}
+                    searchPlaceholder="Buscar Detalhe da Ocorrência..."
+                    emptyMessage="Nenhum Detalhe da Ocorrência ativo disponível."
+                  />
+
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      onClick={salvarRelacionamentosSubassunto}
+                      disabled={salvandoRelacionamentoDetalhe}
+                    >
+                      {salvandoRelacionamentoDetalhe ? (
                         <Loader2 className="animate-spin" />
                       ) : (
                         <Save />
@@ -415,7 +623,7 @@ function Cadastros({ id }: { id: Identidade }) {
           <DialogHeader>
             <DialogTitle>
               {edicao?.item ? "Editar" : "Novo"}{" "}
-              {edicao?.cadastro === "assunto" ? "Assunto" : "Subassunto"}
+              {edicao ? rotuloCadastro(edicao.cadastro) : "Cadastro"}
             </DialogTitle>
             <DialogDescription>
               Informe o nome e defina se o cadastro ficará ativo para uso nas tabulações.
@@ -444,10 +652,17 @@ function Cadastros({ id }: { id: Identidade }) {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEdicao(null)} disabled={salvandoItem}>
+            <Button
+              variant="outline"
+              onClick={() => setEdicao(null)}
+              disabled={salvandoItem}
+            >
               Cancelar
             </Button>
-            <Button onClick={salvarItem} disabled={salvandoItem || !nomeEdicao.trim()}>
+            <Button
+              onClick={salvarItem}
+              disabled={salvandoItem || !nomeEdicao.trim()}
+            >
               {salvandoItem ? <Loader2 className="animate-spin" /> : <Save />}
               Salvar
             </Button>
@@ -457,4 +672,3 @@ function Cadastros({ id }: { id: Identidade }) {
     </div>
   );
 }
-
