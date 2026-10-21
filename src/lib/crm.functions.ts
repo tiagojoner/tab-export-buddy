@@ -15,10 +15,6 @@ export type CriticidadeCRM = OpcaoCRM & {
   ordem: number;
 };
 
-export type ConfiguracaoCRM = {
-  exibirDetalheOcorrencia: boolean;
-};
-
 export type CadastrosCRM = {
   canal: OpcaoCRM[];
   origem: OpcaoCRM[];
@@ -28,7 +24,6 @@ export type CadastrosCRM = {
   area: OpcaoCRM[];
   detalhe: OpcaoCRM[];
   criticidade: CriticidadeCRM[];
-  configuracao: ConfiguracaoCRM;
 };
 
 export type StatusTabulacao = "ativas" | "excluidas" | "todas";
@@ -147,8 +142,6 @@ type OpcaoRow = {
 
 type TabulacaoRow = {
   id_registro: string;
-  canal: string | null;
-  origem: string | null;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -176,8 +169,6 @@ type UsuarioFiltroRow = {
 
 type TabulacaoExportacaoRow = {
   id_registro: string;
-  canal: string | null;
-  origem: string | null;
   tipo_ocorrencia: string;
   assunto: string;
   subassunto: string | null;
@@ -354,12 +345,10 @@ async function buscarPagina(
   const rows = await sql<TabulacaoRow[]>`
     SELECT
       id_registro::text AS id_registro,
-      canal,
-      origem,
       tipo_ocorrencia,
+      area_interesse,
       assunto,
       subassunto,
-      area_interesse,
       detalhe_ocorrencia,
       criticidade,
       usuario_id::text AS usuario_id,
@@ -372,11 +361,9 @@ async function buscarPagina(
       setor_usuario_exclusao,
       data_hora_exclusao,
       total_registros::text AS total_registros
-    FROM crm.listar_tabulacoes_paginadas(
+    FROM crm.listar_classificacoes_paginadas(
       ${chave},
       ${params.somenteMinhas},
-      ${null},
-      ${null},
       ${filtros.tipo},
       ${filtros.assunto},
       ${filtros.subassunto},
@@ -414,7 +401,6 @@ export const carregarCadastrosCRM = createServerFn({
     area,
     detalhe,
     criticidadeBase,
-    parametroRows,
   ] = await Promise.all([
     listarOpcoes(chave, "canal"),
     listarOpcoes(chave, "origem"),
@@ -424,12 +410,6 @@ export const carregarCadastrosCRM = createServerFn({
     listarOpcoes(chave, "area_interesse"),
     listarOpcoes(chave, "detalhe_ocorrencia"),
     listarOpcoes(chave, "criticidade"),
-    sql<{ valor: boolean }[]>`
-      SELECT crm.obter_parametro_booleano(
-        ${chave},
-        'EXIBIR_DETALHE_OCORRENCIA'
-      ) AS valor
-    `,
   ]);
 
   const sortNome = (a: OpcaoCRM, b: OpcaoCRM) =>
@@ -451,9 +431,6 @@ export const carregarCadastrosCRM = createServerFn({
     area: area.sort(sortNome),
     detalhe: detalhe.sort(sortNome),
     criticidade,
-    configuracao: {
-      exibirDetalheOcorrencia: Boolean(parametroRows[0]?.valor),
-    },
   } satisfies CadastrosCRM;
 });
 
@@ -481,6 +458,53 @@ export const listarSubassuntosRelacionadosCRM = createServerFn({
     })) satisfies OpcaoCRM[];
   });
 
+export type CombinacaoClassificacaoCRM = {
+  subassuntoId: number | null;
+  detalheId: number | null;
+};
+
+export type DetalhePorSubassuntoCRM = {
+  subassuntoId: number;
+  detalheId: number;
+  nome: string;
+};
+
+export const listarDetalhesPorSubassuntosCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { subassuntoIds: number[] }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+    const ids = Array.from(new Set(data.subassuntoIds));
+
+    if (ids.length === 0) return [] satisfies DetalhePorSubassuntoCRM[];
+
+    const arrayLiteral = `{${ids.join(",")}}`;
+    const rows = await sql<{
+      subassunto_id: string;
+      detalhe_ocorrencia_id: string;
+      nome: string;
+    }[]>`
+      SELECT
+        subassunto_id::text AS subassunto_id,
+        detalhe_ocorrencia_id::text AS detalhe_ocorrencia_id,
+        nome
+      FROM crm.listar_detalhes_por_subassuntos(
+        ${chave},
+        ${arrayLiteral}::bigint[]
+      )
+    `;
+
+    return rows.map((row) => ({
+      subassuntoId: Number(row.subassunto_id),
+      detalheId: Number(row.detalhe_ocorrencia_id),
+      nome: row.nome,
+    })) satisfies DetalhePorSubassuntoCRM[];
+  });
+
 export const inserirClassificacoesCRM = createServerFn({
   method: "POST",
 })
@@ -488,9 +512,8 @@ export const inserirClassificacoesCRM = createServerFn({
     (data: {
       tipo: number;
       assunto: number;
-      subassuntos: number[];
+      combinacoes: CombinacaoClassificacaoCRM[];
       area: number;
-      detalhe: number | null;
       criticidade: number;
     }) => data,
   )
@@ -499,17 +522,30 @@ export const inserirClassificacoesCRM = createServerFn({
 
     const chave = exigirChave();
     const sql = getDb();
-    const arrayLiteral = `{${data.subassuntos.join(",")}}`;
+    const combinacoes = Array.from(
+      new Map(
+        data.combinacoes.map((item) => [
+          `${item.subassuntoId ?? "null"}:${item.detalheId ?? "null"}`,
+          item,
+        ]),
+      ).values(),
+    );
+
+    const payload = JSON.stringify(
+      combinacoes.map((item) => ({
+        subassunto_id: item.subassuntoId,
+        detalhe_id: item.detalheId,
+      })),
+    );
 
     const rows = await sql<{ inseridos: number; duplicados: number }[]>`
       SELECT inseridos, duplicados
-      FROM crm.inserir_classificacoes(
+      FROM crm.inserir_classificacoes_v2(
         ${chave},
         ${data.tipo},
         ${data.assunto},
-        ${arrayLiteral}::bigint[],
+        ${payload}::jsonb,
         ${data.area},
-        ${data.detalhe},
         ${data.criticidade}
       )
     `;
@@ -640,22 +676,18 @@ export const exportarTabulacoesCRM = createServerFn({
     const rows = await sql<TabulacaoExportacaoRow[]>`
       SELECT
         id_registro::text AS id_registro,
-        canal,
-        origem,
         tipo_ocorrencia,
+        area_interesse,
         assunto,
         subassunto,
-        area_interesse,
         detalhe_ocorrencia,
         criticidade,
         nome_usuario,
         setor_usuario,
         data_hora_inclusao
-      FROM crm.exportar_tabulacoes(
+      FROM crm.exportar_classificacoes(
         ${chave},
         ${data.somenteMinhas},
-        ${null},
-        ${null},
         ${filtros.tipo},
         ${filtros.assunto},
         ${filtros.subassunto},
