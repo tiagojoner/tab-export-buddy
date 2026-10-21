@@ -6,7 +6,10 @@ import { setResponseHeader } from "@tanstack/react-start/server";
 import { lerChaveSessao } from "./auth.server";
 import { getDb } from "./db.server";
 
-export type CadastroAdminTipo = "assunto" | "subassunto";
+export type CadastroAdminTipo =
+  | "assunto"
+  | "subassunto"
+  | "detalhe_ocorrencia";
 
 export type CadastroAdminItem = {
   id: number;
@@ -20,8 +23,12 @@ type CadastroAdminRow = {
   ativo: boolean;
 };
 
-type RelacionamentoRow = {
+type RelacionamentoAssuntoRow = {
   subassunto_id: string;
+};
+
+type RelacionamentoSubassuntoRow = {
+  detalhe_ocorrencia_id: string;
 };
 
 function exigirChave(): string {
@@ -42,7 +49,7 @@ export const carregarCadastrosAdminCRM = createServerFn({
   const chave = exigirChave();
   const sql = getDb();
 
-  const [assuntosRows, subassuntosRows] = await Promise.all([
+  const [assuntosRows, subassuntosRows, detalhesRows] = await Promise.all([
     sql<CadastroAdminRow[]>`
       SELECT id::text AS id, nome, ativo
       FROM crm.listar_cadastro_admin(${chave}, 'assunto')
@@ -50,6 +57,10 @@ export const carregarCadastrosAdminCRM = createServerFn({
     sql<CadastroAdminRow[]>`
       SELECT id::text AS id, nome, ativo
       FROM crm.listar_cadastro_admin(${chave}, 'subassunto')
+    `,
+    sql<CadastroAdminRow[]>`
+      SELECT id::text AS id, nome, ativo
+      FROM crm.listar_cadastro_admin(${chave}, 'detalhe_ocorrencia')
     `,
   ]);
 
@@ -62,6 +73,7 @@ export const carregarCadastrosAdminCRM = createServerFn({
   return {
     assuntos: assuntosRows.map(map),
     subassuntos: subassuntosRows.map(map),
+    detalhes: detalhesRows.map(map),
   };
 });
 
@@ -124,7 +136,7 @@ export const carregarRelacionamentosAssuntoAdminCRM = createServerFn({
     const chave = exigirChave();
     const sql = getDb();
 
-    const rows = await sql<RelacionamentoRow[]>`
+    const rows = await sql<RelacionamentoAssuntoRow[]>`
       SELECT subassunto_id::text AS subassunto_id
       FROM crm.listar_relacionamentos_assunto_admin(
         ${chave},
@@ -166,27 +178,53 @@ export const salvarRelacionamentosAssuntoAdminCRM = createServerFn({
     };
   });
 
-export const atualizarParametroDetalheCRM = createServerFn({
+export const carregarRelacionamentosSubassuntoAdminCRM = createServerFn({
   method: "POST",
 })
-  .validator((data: { ativo: boolean }) => data)
+  .validator((data: { subassuntoId: number }) => data)
   .handler(async ({ data }) => {
     setResponseHeader("Cache-Control", "no-store");
 
     const chave = exigirChave();
     const sql = getDb();
 
-    const rows = await sql<{ ok: boolean }[]>`
-      SELECT crm.atualizar_parametro_booleano(
+    const rows = await sql<RelacionamentoSubassuntoRow[]>`
+      SELECT detalhe_ocorrencia_id::text AS detalhe_ocorrencia_id
+      FROM crm.listar_relacionamentos_subassunto_admin(
         ${chave},
-        'EXIBIR_DETALHE_OCORRENCIA',
-        ${data.ativo}
-      ) AS ok
+        ${data.subassuntoId}
+      )
     `;
 
-    if (!rows[0]?.ok) {
-      throw new Error("Não foi possível atualizar a parametrização.");
-    }
+    return rows.map((row) => Number(row.detalhe_ocorrencia_id));
+  });
 
-    return { ok: true };
+export const salvarRelacionamentosSubassuntoAdminCRM = createServerFn({
+  method: "POST",
+})
+  .validator(
+    (data: {
+      subassuntoId: number;
+      detalheIds: number[];
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+    const arrayLiteral = `{${data.detalheIds.join(",")}}`;
+
+    const rows = await sql<{ quantidade: number }[]>`
+      SELECT crm.salvar_relacionamentos_subassunto_admin(
+        ${chave},
+        ${data.subassuntoId},
+        ${arrayLiteral}::bigint[]
+      ) AS quantidade
+    `;
+
+    return {
+      ok: true,
+      quantidade: Number(rows[0]?.quantidade ?? 0),
+    };
   });
