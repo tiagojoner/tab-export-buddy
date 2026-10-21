@@ -8,7 +8,6 @@ import {
   Database,
   Loader2,
   LogOut,
-  Settings2,
   Table2,
 } from "lucide-react";
 
@@ -43,11 +42,6 @@ const navAdministrador = [
     to: "/cadastros",
     label: "Cadastro",
     icon: Database,
-  },
-  {
-    to: "/parametrizacao",
-    label: "Parametrização",
-    icon: Settings2,
   },
 ] as const;
 
