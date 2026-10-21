@@ -45,8 +45,17 @@ export function CheckboxMultiSelect({
     return options.filter((item) => normalizar(item.nome).includes(termo));
   }, [busca, options]);
 
-  const todasSelecionadas =
-    options.length > 0 && options.every((item) => selected.has(item.id));
+  const idsFiltrados = useMemo(
+    () => new Set(filtradas.map((item) => item.id)),
+    [filtradas],
+  );
+
+  const todasFiltradasSelecionadas =
+    filtradas.length > 0 && filtradas.every((item) => selected.has(item.id));
+
+  const algumaFiltradaSelecionada = filtradas.some((item) =>
+    selected.has(item.id),
+  );
 
   function alternar(id: number, marcado: boolean) {
     const proximo = new Set(selected);
@@ -60,11 +69,34 @@ export function CheckboxMultiSelect({
     onChange(Array.from(proximo));
   }
 
+  function selecionarFiltradas() {
+    const proximo = new Set(selected);
+
+    for (const item of filtradas) {
+      proximo.add(item.id);
+    }
+
+    onChange(Array.from(proximo));
+  }
+
+  function desmarcarFiltradas() {
+    const proximo = new Set(
+      selectedIds.filter((id) => !idsFiltrados.has(id)),
+    );
+
+    onChange(Array.from(proximo));
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
         <div className="text-sm font-medium">
           {selectedIds.length} de {options.length} selecionado(s)
+          {busca.trim() && (
+            <span className="ml-2 font-normal text-muted-foreground">
+              · {filtradas.length} resultado(s) no filtro
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1">
@@ -72,8 +104,12 @@ export function CheckboxMultiSelect({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={disabled || options.length === 0 || todasSelecionadas}
-            onClick={() => onChange(options.map((item) => item.id))}
+            disabled={
+              disabled ||
+              filtradas.length === 0 ||
+              todasFiltradasSelecionadas
+            }
+            onClick={selecionarFiltradas}
           >
             <CheckCheck className="size-4" />
             Selecionar todos
@@ -83,8 +119,12 @@ export function CheckboxMultiSelect({
             type="button"
             variant="ghost"
             size="sm"
-            disabled={disabled || selectedIds.length === 0}
-            onClick={() => onChange([])}
+            disabled={
+              disabled ||
+              filtradas.length === 0 ||
+              !algumaFiltradaSelecionada
+            }
+            onClick={desmarcarFiltradas}
           >
             <X className="size-4" />
             Desmarcar todos
@@ -125,7 +165,9 @@ export function CheckboxMultiSelect({
                   <Checkbox
                     checked={marcado}
                     disabled={disabled}
-                    onCheckedChange={(value) => alternar(item.id, value === true)}
+                    onCheckedChange={(value) =>
+                      alternar(item.id, value === true)
+                    }
                   />
                   <span className="leading-4">{item.nome}</span>
                 </label>
