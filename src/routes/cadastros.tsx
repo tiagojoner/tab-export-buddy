@@ -31,6 +31,7 @@ import {
   salvarRelacionamentosSubassuntoAdminCRM,
   type CadastroAdminItem,
   type CadastroAdminTipo,
+  type RelacionamentoAdminItem,
 } from "@/lib/admin.functions";
 import type { Identidade } from "@/lib/session";
 
@@ -64,6 +65,42 @@ function rotuloCadastro(cadastro: CadastroAdminTipo) {
   if (cadastro === "assunto") return "Assunto";
   if (cadastro === "subassunto") return "Subassunto";
   return "Detalhe da Ocorrência";
+}
+
+function formatarDataHora(value: string | null) {
+  if (!value) return "—";
+
+  const data = new Date(value);
+
+  if (Number.isNaN(data.getTime())) return value;
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(data);
+}
+
+function UltimaAlteracao({
+  nome,
+  data,
+}: {
+  nome: string | null;
+  data: string | null;
+}) {
+  if (!nome || !data) {
+    return <span className="text-muted-foreground">Sem alteração</span>;
+  }
+
+  return (
+    <div>
+      <div>{nome}</div>
+      <div className="text-xs text-muted-foreground">{formatarDataHora(data)}</div>
+    </div>
+  );
 }
 
 function ListaCadastro({
@@ -104,12 +141,15 @@ function ListaCadastro({
       </div>
 
       <div className="max-h-[62vh] overflow-auto rounded-xl border bg-card">
-        <table className="w-full min-w-[700px] text-sm">
+        <table className="w-full min-w-[1180px] text-sm">
           <thead className="sticky top-0 z-10 bg-secondary text-left">
             <tr>
               <th className="px-3 py-2 font-medium">Nome</th>
-              <th className="w-28 px-3 py-2 font-medium">Status</th>
-              <th className="w-24 px-3 py-2 text-center font-medium">Ações</th>
+              <th className="w-24 px-3 py-2 font-medium">Status</th>
+              <th className="w-52 px-3 py-2 font-medium">Criado por</th>
+              <th className="w-40 px-3 py-2 font-medium">Criado em</th>
+              <th className="w-56 px-3 py-2 font-medium">Última alteração</th>
+              <th className="w-20 px-3 py-2 text-center font-medium">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -127,6 +167,14 @@ function ListaCadastro({
                     {item.ativo ? "Ativo" : "Inativo"}
                   </span>
                 </td>
+                <td className="px-3 py-2">{item.criadoPorNome}</td>
+                <td className="px-3 py-2">{formatarDataHora(item.criadoEm)}</td>
+                <td className="px-3 py-2">
+                  <UltimaAlteracao
+                    nome={item.alteradoPorNome}
+                    data={item.alteradoEm}
+                  />
+                </td>
                 <td className="px-3 py-1 text-center">
                   <Button
                     variant="ghost"
@@ -143,13 +191,62 @@ function ListaCadastro({
             {items.length === 0 && (
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={6}
                   className="px-3 py-10 text-center text-muted-foreground"
                 >
                   Nenhum registro encontrado.
                 </td>
               </tr>
             )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TabelaRastreabilidadeRelacionamentos({
+  titulo,
+  items,
+}: {
+  titulo: string;
+  items: RelacionamentoAdminItem[];
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-5 space-y-2">
+      <div>
+        <h3 className="text-sm font-semibold">Rastreabilidade dos vínculos salvos</h3>
+        <p className="text-xs text-muted-foreground">
+          Autoria de criação e última alteração dos relacionamentos atualmente cadastrados.
+        </p>
+      </div>
+
+      <div className="max-h-72 overflow-auto rounded-lg border">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead className="sticky top-0 bg-secondary text-left">
+            <tr>
+              <th className="px-3 py-2 font-medium">{titulo}</th>
+              <th className="w-52 px-3 py-2 font-medium">Criado por</th>
+              <th className="w-40 px-3 py-2 font-medium">Criado em</th>
+              <th className="w-56 px-3 py-2 font-medium">Última alteração</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className="border-t">
+                <td className="px-3 py-2">{item.nome}</td>
+                <td className="px-3 py-2">{item.criadoPorNome}</td>
+                <td className="px-3 py-2">{formatarDataHora(item.criadoEm)}</td>
+                <td className="px-3 py-2">
+                  <UltimaAlteracao
+                    nome={item.alteradoPorNome}
+                    data={item.alteradoEm}
+                  />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -215,7 +312,9 @@ function Cadastros({ id }: { id: Identidade }) {
     }
 
     if (relacionamentosAssunto.data) {
-      setSubassuntosRelacionados(relacionamentosAssunto.data);
+      setSubassuntosRelacionados(
+        relacionamentosAssunto.data.map((item) => item.id),
+      );
     }
   }, [assuntoRelacionamento, relacionamentosAssunto.data]);
 
@@ -226,7 +325,9 @@ function Cadastros({ id }: { id: Identidade }) {
     }
 
     if (relacionamentosSubassunto.data) {
-      setDetalhesRelacionados(relacionamentosSubassunto.data);
+      setDetalhesRelacionados(
+        relacionamentosSubassunto.data.map((item) => item.id),
+      );
     }
   }, [subassuntoRelacionamento, relacionamentosSubassunto.data]);
 
@@ -546,6 +647,11 @@ function Cadastros({ id }: { id: Identidade }) {
                       Salvar relacionamentos
                     </Button>
                   </div>
+
+                  <TabelaRastreabilidadeRelacionamentos
+                    titulo="Subassunto"
+                    items={relacionamentosAssunto.data ?? []}
+                  />
                 </>
               )}
             </div>
@@ -611,6 +717,11 @@ function Cadastros({ id }: { id: Identidade }) {
                       Salvar relacionamentos
                     </Button>
                   </div>
+
+                  <TabelaRastreabilidadeRelacionamentos
+                    titulo="Detalhe da Ocorrência"
+                    items={relacionamentosSubassunto.data ?? []}
+                  />
                 </>
               )}
             </div>
