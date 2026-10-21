@@ -25,9 +25,10 @@ type ColunaCanalOrigem = {
 
 const COLS_CLASSIFICACAO: ColunaClassificacao[] = [
   { h: "Tipo de Ocorrência", k: "tipo_ocorrencia", w: 22 },
+  { h: "Área de Interesse", k: "area_interesse", w: 30 },
   { h: "Assunto", k: "assunto", w: 34 },
   { h: "Subassunto", k: "subassunto", w: 38 },
-  { h: "Área de Interesse", k: "area_interesse", w: 30 },
+  { h: "Detalhe da Ocorrência", k: "detalhe_ocorrencia", w: 38 },
   { h: "Grau de Criticidade", k: "criticidade", w: 22 },
   { h: "Nome do Usuário", k: "nome_usuario", w: 28 },
   { h: "Setor do Usuário", k: "setor_usuario", w: 28 },
@@ -120,10 +121,8 @@ async function baixarWorkbook<T extends object>({
 
 export async function exportarClassificacoes({
   filtros,
-  mostrarDetalhe,
 }: {
   filtros: FiltrosTabulacoesCRM;
-  mostrarDetalhe: boolean;
 }): Promise<number> {
   const rows = (await exportarTabulacoesCRM({
     data: {
@@ -134,19 +133,9 @@ export async function exportarClassificacoes({
 
   if (rows.length === 0) return 0;
 
-  const colunas = [...COLS_CLASSIFICACAO];
-
-  if (mostrarDetalhe) {
-    colunas.splice(4, 0, {
-      h: "Detalhe da Ocorrência",
-      k: "detalhe_ocorrencia",
-      w: 34,
-    });
-  }
-
   await baixarWorkbook<TabulacaoExportacaoCRM>({
     rows,
-    colunas,
+    colunas: COLS_CLASSIFICACAO,
     aba: "Classificação",
     nomeArquivo: `Tabulacoes_CRM_Classificacao_${dataArquivo()}.xlsx`,
   });
