@@ -15,20 +15,46 @@ export type CadastroAdminItem = {
   id: number;
   nome: string;
   ativo: boolean;
+  criadoPor: number;
+  criadoPorNome: string;
+  criadoEm: string;
+  alteradoPor: number | null;
+  alteradoPorNome: string | null;
+  alteradoEm: string | null;
+};
+
+export type RelacionamentoAdminItem = {
+  id: number;
+  nome: string;
+  criadoPor: number;
+  criadoPorNome: string;
+  criadoEm: string;
+  alteradoPor: number | null;
+  alteradoPorNome: string | null;
+  alteradoEm: string | null;
 };
 
 type CadastroAdminRow = {
   id: string;
   nome: string;
   ativo: boolean;
+  criado_por: string;
+  criado_por_nome: string;
+  criado_em: string;
+  alterado_por: string | null;
+  alterado_por_nome: string | null;
+  alterado_em: string | null;
 };
 
-type RelacionamentoAssuntoRow = {
-  subassunto_id: string;
-};
-
-type RelacionamentoSubassuntoRow = {
-  detalhe_ocorrencia_id: string;
+type RelacionamentoAdminRow = {
+  id: string;
+  nome: string;
+  criado_por: string;
+  criado_por_nome: string;
+  criado_em: string;
+  alterado_por: string | null;
+  alterado_por_nome: string | null;
+  alterado_em: string | null;
 };
 
 function exigirChave(): string {
@@ -41,6 +67,33 @@ function exigirChave(): string {
   return chave;
 }
 
+function mapCadastro(row: CadastroAdminRow): CadastroAdminItem {
+  return {
+    id: Number(row.id),
+    nome: row.nome,
+    ativo: Boolean(row.ativo),
+    criadoPor: Number(row.criado_por),
+    criadoPorNome: row.criado_por_nome,
+    criadoEm: row.criado_em,
+    alteradoPor: row.alterado_por == null ? null : Number(row.alterado_por),
+    alteradoPorNome: row.alterado_por_nome,
+    alteradoEm: row.alterado_em,
+  };
+}
+
+function mapRelacionamento(row: RelacionamentoAdminRow): RelacionamentoAdminItem {
+  return {
+    id: Number(row.id),
+    nome: row.nome,
+    criadoPor: Number(row.criado_por),
+    criadoPorNome: row.criado_por_nome,
+    criadoEm: row.criado_em,
+    alteradoPor: row.alterado_por == null ? null : Number(row.alterado_por),
+    alteradoPorNome: row.alterado_por_nome,
+    alteradoEm: row.alterado_em,
+  };
+}
+
 export const carregarCadastrosAdminCRM = createServerFn({
   method: "GET",
 }).handler(async () => {
@@ -51,29 +104,50 @@ export const carregarCadastrosAdminCRM = createServerFn({
 
   const [assuntosRows, subassuntosRows, detalhesRows] = await Promise.all([
     sql<CadastroAdminRow[]>`
-      SELECT id::text AS id, nome, ativo
+      SELECT
+        id::text AS id,
+        nome,
+        ativo,
+        criado_por::text AS criado_por,
+        criado_por_nome,
+        criado_em::text AS criado_em,
+        alterado_por::text AS alterado_por,
+        alterado_por_nome,
+        alterado_em::text AS alterado_em
       FROM crm.listar_cadastro_admin(${chave}, 'assunto')
     `,
     sql<CadastroAdminRow[]>`
-      SELECT id::text AS id, nome, ativo
+      SELECT
+        id::text AS id,
+        nome,
+        ativo,
+        criado_por::text AS criado_por,
+        criado_por_nome,
+        criado_em::text AS criado_em,
+        alterado_por::text AS alterado_por,
+        alterado_por_nome,
+        alterado_em::text AS alterado_em
       FROM crm.listar_cadastro_admin(${chave}, 'subassunto')
     `,
     sql<CadastroAdminRow[]>`
-      SELECT id::text AS id, nome, ativo
+      SELECT
+        id::text AS id,
+        nome,
+        ativo,
+        criado_por::text AS criado_por,
+        criado_por_nome,
+        criado_em::text AS criado_em,
+        alterado_por::text AS alterado_por,
+        alterado_por_nome,
+        alterado_em::text AS alterado_em
       FROM crm.listar_cadastro_admin(${chave}, 'detalhe_ocorrencia')
     `,
   ]);
 
-  const map = (row: CadastroAdminRow): CadastroAdminItem => ({
-    id: Number(row.id),
-    nome: row.nome,
-    ativo: Boolean(row.ativo),
-  });
-
   return {
-    assuntos: assuntosRows.map(map),
-    subassuntos: subassuntosRows.map(map),
-    detalhes: detalhesRows.map(map),
+    assuntos: assuntosRows.map(mapCadastro),
+    subassuntos: subassuntosRows.map(mapCadastro),
+    detalhes: detalhesRows.map(mapCadastro),
   };
 });
 
@@ -136,15 +210,23 @@ export const carregarRelacionamentosAssuntoAdminCRM = createServerFn({
     const chave = exigirChave();
     const sql = getDb();
 
-    const rows = await sql<RelacionamentoAssuntoRow[]>`
-      SELECT subassunto_id::text AS subassunto_id
+    const rows = await sql<RelacionamentoAdminRow[]>`
+      SELECT
+        subassunto_id::text AS id,
+        nome,
+        criado_por::text AS criado_por,
+        criado_por_nome,
+        criado_em::text AS criado_em,
+        alterado_por::text AS alterado_por,
+        alterado_por_nome,
+        alterado_em::text AS alterado_em
       FROM crm.listar_relacionamentos_assunto_admin(
         ${chave},
         ${data.assuntoId}
       )
     `;
 
-    return rows.map((row) => Number(row.subassunto_id));
+    return rows.map(mapRelacionamento);
   });
 
 export const salvarRelacionamentosAssuntoAdminCRM = createServerFn({
@@ -188,15 +270,23 @@ export const carregarRelacionamentosSubassuntoAdminCRM = createServerFn({
     const chave = exigirChave();
     const sql = getDb();
 
-    const rows = await sql<RelacionamentoSubassuntoRow[]>`
-      SELECT detalhe_ocorrencia_id::text AS detalhe_ocorrencia_id
+    const rows = await sql<RelacionamentoAdminRow[]>`
+      SELECT
+        detalhe_ocorrencia_id::text AS id,
+        nome,
+        criado_por::text AS criado_por,
+        criado_por_nome,
+        criado_em::text AS criado_em,
+        alterado_por::text AS alterado_por,
+        alterado_por_nome,
+        alterado_em::text AS alterado_em
       FROM crm.listar_relacionamentos_subassunto_admin(
         ${chave},
         ${data.subassuntoId}
       )
     `;
 
-    return rows.map((row) => Number(row.detalhe_ocorrencia_id));
+    return rows.map(mapRelacionamento);
   });
 
 export const salvarRelacionamentosSubassuntoAdminCRM = createServerFn({
