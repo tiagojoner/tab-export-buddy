@@ -5,16 +5,19 @@ import { Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import type { FiltrosCanalOrigemCRM } from "@/lib/canal-origem.functions";
 import type { FiltrosTabulacoesCRM } from "@/lib/crm.functions";
-import { exportarTabulacoes } from "@/lib/exportar";
+import { exportarCanaisOrigens, exportarClassificacoes } from "@/lib/exportar";
 import { useIdentidade } from "@/lib/session";
 
 export function ExportButton({
-  somenteMinhas,
-  filtros,
+  tipo,
+  filtrosClassificacao,
+  filtrosCanalOrigem,
 }: {
-  somenteMinhas: boolean;
-  filtros: FiltrosTabulacoesCRM;
+  tipo: "classificacao" | "canal-origem";
+  filtrosClassificacao?: FiltrosTabulacoesCRM;
+  filtrosCanalOrigem?: FiltrosCanalOrigemCRM;
 }) {
   const [id] = useIdentidade();
   const [busy, setBusy] = useState(false);
@@ -22,41 +25,45 @@ export function ExportButton({
   async function run() {
     if (!id) return;
 
-    if (filtros.status === "excluidas") {
-      toast.info("Registros excluídos não são exportados.");
-      return;
-    }
-
     setBusy(true);
 
     try {
-      const n = await exportarTabulacoes({
-        id,
-        somenteMinhas,
-        filtros,
-      });
+      const n =
+        tipo === "classificacao"
+          ? await exportarClassificacoes({
+              filtros: filtrosClassificacao!,
+            })
+          : await exportarCanaisOrigens({
+              filtros: filtrosCanalOrigem!,
+            });
 
       if (n === 0) {
-        toast.info("Não há registros ativos para exportar com os filtros atuais.");
-      } else {
-        toast.success(`${n} tabulação(ões) ativa(s) exportada(s) com sucesso.`);
-
-        if (filtros.status === "todas") {
-          toast.info("Registros excluídos não são incluídos na exportação.");
-        }
+        toast.info(
+          "Nenhum registro ativo encontrado para exportação com os filtros atuais.",
+        );
+        return;
       }
+
+      toast.success(`${n} registro(s) ativo(s) exportado(s).`);
     } catch (error) {
-      toast.error("Não foi possível gerar o arquivo. Tente novamente.");
       console.error(error);
+      toast.error("Não foi possível gerar o arquivo Excel.");
     } finally {
       setBusy(false);
     }
   }
 
+  const filtrosDisponiveis =
+    tipo === "classificacao" ? !!filtrosClassificacao : !!filtrosCanalOrigem;
+
   return (
-    <Button variant="outline" onClick={run} disabled={busy || !id}>
+    <Button
+      variant="outline"
+      onClick={run}
+      disabled={busy || !id || !filtrosDisponiveis}
+    >
       {busy ? <Loader2 className="animate-spin" /> : <Download />}
-      Exportar resultados
+      Exportar Excel
     </Button>
   );
 }

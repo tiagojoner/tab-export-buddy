@@ -1,4 +1,4 @@
-// /root/app-nxtai/crm/src/routes/index.tsx
+//crm/src/routes/index.tsx
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -88,6 +88,7 @@ function Index() {
           usuarioId: usuario.usuarioId,
           nome: usuario.nome,
           setor: usuario.setor,
+          perfil: usuario.perfil,
         });
 
         navigate({ to: "/cadastro" });
@@ -134,6 +135,7 @@ function Index() {
         usuarioId: resultado.usuario.usuarioId,
         nome: resultado.usuario.nome,
         setor: resultado.usuario.setor,
+        perfil: resultado.usuario.perfil,
       });
 
       navigate({ to: "/cadastro" });

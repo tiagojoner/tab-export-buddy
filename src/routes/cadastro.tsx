@@ -1,15 +1,28 @@
 //crm/src/routes/cadastro.tsx
+
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   keepPreviousData,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
-import { AlertCircle, Eraser, Loader2, Plus, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  AlertCircle,
+  Eraser,
+  Loader2,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
+import { CanaisOrigensTable } from "@/components/CanaisOrigensTable";
+import { CheckboxMultiSelect } from "@/components/CheckboxMultiSelect";
+import {
+  DetalhesPorSubassunto,
+  type GrupoDetalhesSubassunto,
+} from "@/components/DetalhesPorSubassunto";
 import { SearchSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
 import {
@@ -24,11 +37,22 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  excluirCanalOrigemCRM,
+  inserirCanaisOrigensCRM,
+  listarCanaisOrigensCRM,
+  type CanalOrigemRegistradoCRM,
+} from "@/lib/canal-origem.functions";
 import { carregarCadastros } from "@/lib/cadastros";
 import {
+  atualizarCriticidadeTabulacaoCRM,
   excluirTabulacaoCRM,
-  inserirTabulacaoCRM,
+  inserirClassificacoesCRM,
+  listarDetalhesPorSubassuntosCRM,
+  listarSubassuntosRelacionadosCRM,
   listarTabulacoesCRM,
+  type CombinacaoClassificacaoCRM,
   type FiltrosTabulacoesCRM,
   type TabulacaoCRM,
 } from "@/lib/crm.functions";
@@ -40,12 +64,12 @@ export const Route = createFileRoute("/cadastro")({
       { title: "Cadastro de Tabulações — Gestor de Tabulações CRM" },
       {
         name: "description",
-        content: "Registre as combinações de classificação utilizadas no CRM.",
+        content: "Registre canais, origens e classificações utilizadas no CRM.",
       },
       { property: "og:title", content: "Cadastro de Tabulações" },
       {
         property: "og:description",
-        content: "Registre as combinações de classificação utilizadas no CRM.",
+        content: "Registre canais, origens e classificações utilizadas no CRM.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -54,31 +78,33 @@ export const Route = createFileRoute("/cadastro")({
   component: () => <AppShell>{(id) => <Cadastro id={id} />}</AppShell>,
 });
 
-type Form = {
-  canal: number | null;
-  origem: number | null;
+type FormClassificacao = {
   tipo: number | null;
   assunto: number | null;
-  sub: number | null;
   area: number | null;
-  detalhe: number | null;
   criticidade: number | null;
 };
 
-const vazio: Form = {
-  canal: null,
-  origem: null,
+type FormCanalOrigem = {
+  canal: number | null;
+  origens: number[];
+};
+
+type DetalhesSelecionados = Record<number, number[]>;
+
+const classificacaoVazia: FormClassificacao = {
   tipo: null,
   assunto: null,
-  sub: null,
   area: null,
-  detalhe: null,
   criticidade: null,
 };
 
-const filtrosCadastro: FiltrosTabulacoesCRM = {
+const canalOrigemVazio: FormCanalOrigem = {
   canal: null,
-  origem: null,
+  origens: [],
+};
+
+const filtrosCadastro: FiltrosTabulacoesCRM = {
   tipo: null,
   assunto: null,
   subassunto: null,
@@ -90,13 +116,62 @@ const filtrosCadastro: FiltrosTabulacoesCRM = {
   status: "ativas",
 };
 
+function normalizar(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function Campo({
+  label,
+  req,
+  children,
+}: {
+  label: string;
+  req?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>
+        {label}
+        {req && <span className="text-destructive"> *</span>}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
 function Cadastro({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<Form>(vazio);
-  const [saving, setSaving] = useState(false);
+  const [aba, setAba] = useState("canal-origem");
+
+  const [formCanalOrigem, setFormCanalOrigem] =
+    useState<FormCanalOrigem>(canalOrigemVazio);
+  const [form, setForm] = useState<FormClassificacao>(classificacaoVazia);
+  const [subassuntosSelecionados, setSubassuntosSelecionados] = useState<
+    number[]
+  >([]);
+  const [detalhesSelecionados, setDetalhesSelecionados] =
+    useState<DetalhesSelecionados>({});
+
+  const [savingCanalOrigem, setSavingCanalOrigem] = useState(false);
+  const [savingClassificacao, setSavingClassificacao] = useState(false);
+  const [confirmarSemSubassunto, setConfirmarSemSubassunto] = useState(false);
+  const [confirmarSemDetalhes, setConfirmarSemDetalhes] = useState<string[]>([]);
+
+  const [delCanalOrigem, setDelCanalOrigem] =
+    useState<CanalOrigemRegistradoCRM | null>(null);
   const [del, setDel] = useState<TabulacaoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [duplicada, setDuplicada] = useState(false);
+
+  const [editando, setEditando] = useState<TabulacaoCRM | null>(null);
+  const [criticidadeEdicao, setCriticidadeEdicao] = useState<number | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
+  const [pageCanalOrigem, setPageCanalOrigem] = useState(0);
+  const [pageSizeCanalOrigem, setPageSizeCanalOrigem] = useState(25);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
 
@@ -109,47 +184,48 @@ function Cadastro({ id }: { id: Identidade }) {
 
   const cad = cadastros.data;
 
-  useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem("gtc_form");
-      if (raw) {
-        setForm({ ...vazio, ...JSON.parse(raw) });
-      }
-    } catch {
-      // Ignora formulário inválido salvo anteriormente.
-    }
-  }, []);
+  const subassuntosRelacionados = useQuery({
+    queryKey: ["subassuntos-relacionados", form.assunto],
+    enabled: form.assunto != null,
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      listarSubassuntosRelacionadosCRM({
+        data: { assuntoId: form.assunto! },
+      }),
+  });
 
-  useEffect(() => {
-    sessionStorage.setItem("gtc_form", JSON.stringify(form));
-  }, [form]);
+  const subassuntosOrdenados = useMemo(
+    () => [...subassuntosSelecionados].sort((a, b) => a - b),
+    [subassuntosSelecionados],
+  );
 
+  const detalhesPorSubassuntos = useQuery({
+    queryKey: ["detalhes-por-subassuntos", subassuntosOrdenados],
+    enabled: subassuntosOrdenados.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      listarDetalhesPorSubassuntosCRM({
+        data: { subassuntoIds: subassuntosOrdenados },
+      }),
+  });
 
-  useEffect(() => {
-    if (!cad) return;
-
-    const existe = (lista: { id: number }[], valor: number | null) =>
-      valor == null || lista.some((item) => item.id === valor);
-
-    const novo = { ...form };
-
-    if (!existe(cad.canal, novo.canal)) novo.canal = null;
-    if (!existe(cad.origem, novo.origem)) novo.origem = null;
-    if (!existe(cad.tipo, novo.tipo)) novo.tipo = null;
-    if (!existe(cad.assunto, novo.assunto)) novo.assunto = null;
-    if (!existe(cad.subassunto, novo.sub)) novo.sub = null;
-    if (!existe(cad.area, novo.area)) novo.area = null;
-    if (!existe(cad.detalhe, novo.detalhe)) novo.detalhe = null;
-    if (!existe(cad.criticidade, novo.criticidade)) novo.criticidade = null;
-
-    if (JSON.stringify(novo) !== JSON.stringify(form)) {
-      setForm(novo);
-    }
-  }, [cad, form]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [pageSize]);
+  const canaisOrigens = useQuery({
+    queryKey: [
+      "cadastro-canais-origens",
+      id.usuarioId,
+      pageCanalOrigem,
+      pageSizeCanalOrigem,
+    ],
+    placeholderData: keepPreviousData,
+    retry: 1,
+    queryFn: () =>
+      listarCanaisOrigensCRM({
+        data: {
+          page: pageCanalOrigem,
+          pageSize: pageSizeCanalOrigem,
+        },
+      }),
+  });
 
   const tabulacoes = useQuery({
     queryKey: ["cadastro-registros", id.usuarioId, page, pageSize],
@@ -166,8 +242,163 @@ function Cadastro({ id }: { id: Identidade }) {
       }),
   });
 
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("gtc_form_canal_origem");
+      if (raw) {
+        const salvo = JSON.parse(raw) as {
+          canal?: number | null;
+          origem?: number | null;
+          origens?: number[];
+        };
+
+        setFormCanalOrigem({
+          canal: salvo.canal ?? null,
+          origens: Array.isArray(salvo.origens)
+            ? salvo.origens
+            : salvo.origem != null
+              ? [salvo.origem]
+              : [],
+        });
+      }
+    } catch {
+      // Ignora formulário inválido salvo anteriormente.
+    }
+
+    try {
+      const raw = sessionStorage.getItem("gtc_form_classificacao");
+      if (raw) {
+        const salvo = JSON.parse(raw) as Partial<FormClassificacao>;
+        setForm({
+          tipo: salvo.tipo ?? null,
+          assunto: salvo.assunto ?? null,
+          area: salvo.area ?? null,
+          criticidade: salvo.criticidade ?? null,
+        });
+      }
+    } catch {
+      // Ignora formulário inválido salvo anteriormente.
+    }
+  }, []);
+
+  useEffect(() => {
+    sessionStorage.setItem(
+      "gtc_form_canal_origem",
+      JSON.stringify(formCanalOrigem),
+    );
+  }, [formCanalOrigem]);
+
+  useEffect(() => {
+    sessionStorage.setItem("gtc_form_classificacao", JSON.stringify(form));
+  }, [form]);
+
+  useEffect(() => {
+    if (!cad) return;
+
+    const existe = (lista: { id: number }[], valor: number | null) =>
+      valor == null || lista.some((item) => item.id === valor);
+
+    setFormCanalOrigem((atual) => ({
+      canal: existe(cad.canal, atual.canal) ? atual.canal : null,
+      origens: atual.origens.filter((origemId) =>
+        cad.origem.some((item) => item.id === origemId),
+      ),
+    }));
+
+    setForm((atual) => {
+      const normal = cad.criticidade.find(
+        (item) => normalizar(item.nome) === "normal",
+      );
+
+      return {
+        tipo: existe(cad.tipo, atual.tipo) ? atual.tipo : null,
+        assunto: existe(cad.assunto, atual.assunto) ? atual.assunto : null,
+        area: existe(cad.area, atual.area) ? atual.area : null,
+        criticidade: existe(cad.criticidade, atual.criticidade)
+          ? (atual.criticidade ?? normal?.id ?? null)
+          : (normal?.id ?? null),
+      };
+    });
+  }, [cad]);
+
+  useEffect(() => {
+    if (form.assunto == null) {
+      setSubassuntosSelecionados([]);
+      setDetalhesSelecionados({});
+      return;
+    }
+
+    if (subassuntosRelacionados.data) {
+      setSubassuntosSelecionados(
+        subassuntosRelacionados.data.map((item) => item.id),
+      );
+      setDetalhesSelecionados({});
+    }
+  }, [form.assunto, subassuntosRelacionados.data]);
+
+  useEffect(() => {
+    if (subassuntosSelecionados.length === 0) {
+      setDetalhesSelecionados({});
+      return;
+    }
+
+    if (detalhesPorSubassuntos.data === undefined) return;
+
+    const disponiveis = new Map<number, number[]>();
+
+    for (const subassuntoId of subassuntosSelecionados) {
+      disponiveis.set(subassuntoId, []);
+    }
+
+    for (const detalhe of detalhesPorSubassuntos.data) {
+      const atuais = disponiveis.get(detalhe.subassuntoId) ?? [];
+      atuais.push(detalhe.detalheId);
+      disponiveis.set(detalhe.subassuntoId, atuais);
+    }
+
+    setDetalhesSelecionados((atual) => {
+      const proximo: DetalhesSelecionados = {};
+
+      for (const subassuntoId of subassuntosSelecionados) {
+        const idsDisponiveis = disponiveis.get(subassuntoId) ?? [];
+        const jaExistia = Object.prototype.hasOwnProperty.call(
+          atual,
+          subassuntoId,
+        );
+
+        proximo[subassuntoId] = jaExistia
+          ? (atual[subassuntoId] ?? []).filter((idDetalhe) =>
+              idsDisponiveis.includes(idDetalhe),
+            )
+          : idsDisponiveis;
+      }
+
+      return proximo;
+    });
+  }, [subassuntosSelecionados, detalhesPorSubassuntos.data]);
+
+  useEffect(() => {
+    setPageCanalOrigem(0);
+  }, [pageSizeCanalOrigem]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [pageSize]);
+
+  const totalCanalOrigem = canaisOrigens.data?.count ?? 0;
+  const pagesCanalOrigem = Math.max(
+    1,
+    Math.ceil(totalCanalOrigem / pageSizeCanalOrigem),
+  );
+
   const total = tabulacoes.data?.count ?? 0;
   const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  useEffect(() => {
+    if (pageCanalOrigem > 0 && pageCanalOrigem >= pagesCanalOrigem) {
+      setPageCanalOrigem(pagesCanalOrigem - 1);
+    }
+  }, [pageCanalOrigem, pagesCanalOrigem]);
 
   useEffect(() => {
     if (page > 0 && page >= pages) {
@@ -175,57 +406,251 @@ function Cadastro({ id }: { id: Identidade }) {
     }
   }, [page, pages]);
 
-  const obrigatoriosPreenchidos =
-    form.canal != null &&
-    form.origem != null &&
+  const normalId = useMemo(
+    () =>
+      cad?.criticidade.find((item) => normalizar(item.nome) === "normal")?.id ??
+      null,
+    [cad?.criticidade],
+  );
+
+  const gruposDetalhes = useMemo<GrupoDetalhesSubassunto[]>(() => {
+    const subassuntos = subassuntosRelacionados.data ?? [];
+    const detalhes = detalhesPorSubassuntos.data ?? [];
+    const porSubassunto = new Map<number, { id: number; nome: string }[]>();
+
+    for (const detalhe of detalhes) {
+      const lista = porSubassunto.get(detalhe.subassuntoId) ?? [];
+      lista.push({ id: detalhe.detalheId, nome: detalhe.nome });
+      porSubassunto.set(detalhe.subassuntoId, lista);
+    }
+
+    return subassuntosSelecionados
+      .map((subassuntoId) => {
+        const subassunto = subassuntos.find((item) => item.id === subassuntoId);
+
+        if (!subassunto) return null;
+
+        return {
+          subassuntoId,
+          subassuntoNome: subassunto.nome,
+          detalhes: porSubassunto.get(subassuntoId) ?? [],
+        };
+      })
+      .filter((grupo): grupo is GrupoDetalhesSubassunto => grupo !== null);
+  }, [
+    detalhesPorSubassuntos.data,
+    subassuntosRelacionados.data,
+    subassuntosSelecionados,
+  ]);
+
+  const totalDetalhesSelecionados = useMemo(
+    () =>
+      subassuntosSelecionados.reduce(
+        (totalAtual, subassuntoId) =>
+          totalAtual + (detalhesSelecionados[subassuntoId]?.length ?? 0),
+        0,
+      ),
+    [detalhesSelecionados, subassuntosSelecionados],
+  );
+
+  const totalTabulacoesPrevistas = useMemo(() => {
+    if (subassuntosSelecionados.length === 0) return 1;
+
+    return subassuntosSelecionados.reduce((totalAtual, subassuntoId) => {
+      const quantidadeDetalhes = detalhesSelecionados[subassuntoId]?.length ?? 0;
+      return totalAtual + Math.max(1, quantidadeDetalhes);
+    }, 0);
+  }, [detalhesSelecionados, subassuntosSelecionados]);
+
+  const obrigatoriosCanalOrigem =
+    formCanalOrigem.canal != null && formCanalOrigem.origens.length > 0;
+
+  const obrigatoriosClassificacao =
     form.tipo != null &&
     form.assunto != null &&
     form.area != null &&
     form.criticidade != null;
 
-  async function adicionar() {
-    if (!obrigatoriosPreenchidos) {
-      toast.error("Preencha todos os campos obrigatórios.");
+  async function invalidarDados() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["registros"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+    ]);
+  }
+
+  async function adicionarCanalOrigem() {
+    if (formCanalOrigem.canal == null) {
+      toast.error("Selecione um Canal.");
       return;
     }
 
-    setSaving(true);
+    if (formCanalOrigem.origens.length === 0) {
+      toast.error("Selecione pelo menos uma Origem.");
+      return;
+    }
+
+    setSavingCanalOrigem(true);
 
     try {
-      const resultado = await inserirTabulacaoCRM({
+      const resultado = await inserirCanaisOrigensCRM({
         data: {
-          canal: form.canal!,
-          origem: form.origem!,
-          tipo: form.tipo!,
-          assunto: form.assunto!,
-          subassunto: form.sub,
-          area: form.area!,
-          detalhe: form.detalhe,
-          criticidade: form.criticidade!,
+          canal: formCanalOrigem.canal,
+          origens: formCanalOrigem.origens,
         },
       });
 
-      if (resultado.status === "duplicada") {
-        setDuplicada(true);
-        return;
+      if (resultado.inseridos > 0 && resultado.duplicados === 0) {
+        toast.success(
+          `${resultado.inseridos} combinação(ões) de Canal e Origem adicionada(s) com sucesso.`,
+        );
+      } else if (resultado.inseridos > 0) {
+        toast.warning(
+          `${resultado.inseridos} combinação(ões) adicionada(s). ${resultado.duplicados} já estavam cadastrada(s) por você e não foram duplicadas.`,
+        );
+      } else if (resultado.duplicados > 0) {
+        toast.warning(
+          "Todas as combinações selecionadas já estavam cadastradas por você.",
+        );
       }
 
-      toast.success("Tabulação adicionada com sucesso.");
-      setPage(0);
-
+      setPageCanalOrigem(0);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
-        queryClient.invalidateQueries({ queryKey: ["registros"] }),
+        queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
+        queryClient.invalidateQueries({ queryKey: ["registros-canal-origem"] }),
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
       ]);
     } catch (error) {
       console.error(error);
       toast.error(
+        error instanceof Error
+          ? error.message
+          : "Erro ao gravar as combinações de Canal e Origem.",
+      );
+    } finally {
+      setSavingCanalOrigem(false);
+    }
+  }
+
+  function montarCombinacoes(): CombinacaoClassificacaoCRM[] {
+    if (subassuntosSelecionados.length === 0) {
+      return [{ subassuntoId: null, detalheId: null }];
+    }
+
+    return subassuntosSelecionados.flatMap((subassuntoId) => {
+      const detalheIds = detalhesSelecionados[subassuntoId] ?? [];
+
+      if (detalheIds.length === 0) {
+        return [{ subassuntoId, detalheId: null }];
+      }
+
+      return detalheIds.map((detalheId) => ({
+        subassuntoId,
+        detalheId,
+      }));
+    });
+  }
+
+  async function salvarClassificacao() {
+    if (!obrigatoriosClassificacao) {
+      toast.error("Preencha todos os campos obrigatórios.");
+      return;
+    }
+
+    setSavingClassificacao(true);
+
+    try {
+      const resultado = await inserirClassificacoesCRM({
+        data: {
+          tipo: form.tipo!,
+          assunto: form.assunto!,
+          combinacoes: montarCombinacoes(),
+          area: form.area!,
+          criticidade: form.criticidade!,
+        },
+      });
+
+      setPage(0);
+
+      if (resultado.inseridos > 0 && resultado.duplicados === 0) {
+        toast.success(
+          `${resultado.inseridos} tabulação(ões) adicionada(s) com sucesso.`,
+        );
+      } else if (resultado.inseridos > 0) {
+        toast.warning(
+          `${resultado.inseridos} tabulação(ões) adicionada(s). ${resultado.duplicados} já haviam sido inserida(s) por você e não foram duplicadas.`,
+        );
+      } else if (resultado.duplicados > 0) {
+        toast.warning("Esta tabulação já foi inserida por você.");
+      }
+
+      await invalidarDados();
+    } catch (error) {
+      console.error(error);
+      toast.error(
         error instanceof Error ? error.message : "Erro ao gravar a tabulação.",
       );
     } finally {
-      setSaving(false);
+      setSavingClassificacao(false);
+    }
+  }
+
+  async function adicionarClassificacao() {
+    if (!obrigatoriosClassificacao) {
+      toast.error("Preencha todos os campos obrigatórios.");
+      return;
+    }
+
+    if (subassuntosSelecionados.length === 0) {
+      setConfirmarSemSubassunto(true);
+      return;
+    }
+
+    if (detalhesPorSubassuntos.isLoading || detalhesPorSubassuntos.isFetching) {
+      toast.info("Aguarde o carregamento dos Detalhes da Ocorrência.");
+      return;
+    }
+
+    const semDetalhesSelecionados = gruposDetalhes.filter(
+      (grupo) =>
+        grupo.detalhes.length > 0 &&
+        (detalhesSelecionados[grupo.subassuntoId]?.length ?? 0) === 0,
+    );
+
+    if (semDetalhesSelecionados.length > 0) {
+      setConfirmarSemDetalhes(
+        semDetalhesSelecionados.map((grupo) => grupo.subassuntoNome),
+      );
+      return;
+    }
+
+    await salvarClassificacao();
+  }
+
+  async function excluirCanalOrigem() {
+    if (!delCanalOrigem) return;
+
+    setDeleting(true);
+
+    try {
+      await excluirCanalOrigemCRM({ data: { id: delCanalOrigem.id_registro } });
+      toast.success("Registro de Canal e Origem excluído.");
+      setDelCanalOrigem(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["cadastro-canais-origens"] }),
+        queryClient.invalidateQueries({ queryKey: ["registros-canal-origem"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
+      ]);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível excluir.",
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -238,13 +663,7 @@ function Cadastro({ id }: { id: Identidade }) {
       await excluirTabulacaoCRM({ data: { id: del.id_registro } });
       toast.success("Registro marcado como excluído.");
       setDel(null);
-
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["cadastro-registros"] }),
-        queryClient.invalidateQueries({ queryKey: ["registros"] }),
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
-        queryClient.invalidateQueries({ queryKey: ["filtros-usuarios-setores"] }),
-      ]);
+      await invalidarDados();
     } catch (error) {
       console.error(error);
       toast.error(
@@ -252,6 +671,39 @@ function Cadastro({ id }: { id: Identidade }) {
       );
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function abrirEdicaoCriticidade(row: TabulacaoCRM) {
+    const atual = cad?.criticidade.find((item) => item.nome === row.criticidade);
+    setEditando(row);
+    setCriticidadeEdicao(atual?.id ?? null);
+  }
+
+  async function salvarCriticidade() {
+    if (!editando || criticidadeEdicao == null) return;
+
+    setSalvandoEdicao(true);
+
+    try {
+      await atualizarCriticidadeTabulacaoCRM({
+        data: {
+          id: editando.id_registro,
+          criticidade: criticidadeEdicao,
+        },
+      });
+
+      toast.success("Grau de Criticidade atualizado.");
+      setEditando(null);
+      setCriticidadeEdicao(null);
+      await invalidarDados();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error ? error.message : "Não foi possível editar.",
+      );
+    } finally {
+      setSalvandoEdicao(false);
     }
   }
 
@@ -270,7 +722,9 @@ function Cadastro({ id }: { id: Identidade }) {
           <AlertCircle className="mt-0.5 size-5 text-destructive" />
           <div className="space-y-3">
             <div>
-              <h1 className="font-semibold">Não foi possível carregar os cadastros</h1>
+              <h1 className="font-semibold">
+                Não foi possível carregar os cadastros
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 O sistema não conseguiu consultar os dados do CRM no PostgreSQL.
               </p>
@@ -285,210 +739,487 @@ function Cadastro({ id }: { id: Identidade }) {
     );
   }
 
-  const set =
-    (campo: keyof Form) =>
-    (valor: number | null) =>
-      setForm((anterior) => ({ ...anterior, [campo]: valor }));
-
-  const Campo = ({
-    label,
-    req,
-    children,
-  }: {
-    label: string;
-    req?: boolean;
-    children: ReactNode;
-  }) => (
-    <div className="space-y-1.5">
-      <Label>
-        {label}
-        {req && <span className="text-destructive"> *</span>}
-      </Label>
-      {children}
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Cadastro de Tabulações</h1>
         <p className="text-sm text-muted-foreground">
-          {total} tabulação(ões) ativa(s) cadastrada(s) por você.
+          Canal/Origem e Classificação da Ocorrência são coletados de forma independente.
         </p>
       </div>
 
-      <div className="rounded-xl border bg-card p-6">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Campo label="Canal" req>
-            <SearchSelect
-              options={cad.canal}
-              value={form.canal}
-              onChange={set("canal")}
-              clearable
-            />
-          </Campo>
+      <Tabs value={aba} onValueChange={setAba}>
+        <TabsList>
+          <TabsTrigger value="canal-origem">Canal e Origem</TabsTrigger>
+          <TabsTrigger value="classificacao">Classificação da Ocorrência</TabsTrigger>
+        </TabsList>
 
-          <Campo label="Origem" req>
-            <SearchSelect
-              options={cad.origem}
-              value={form.origem}
-              onChange={set("origem")}
-              clearable
-            />
-          </Campo>
+        <TabsContent value="canal-origem" className="space-y-4">
+          <div className="rounded-xl border bg-card p-6">
+            <div className="grid gap-4 md:grid-cols-3">
+              <Campo label="Canal" req>
+                <SearchSelect
+                  options={cad.canal}
+                  value={formCanalOrigem.canal}
+                  onChange={(value) =>
+                    setFormCanalOrigem((atual) => ({ ...atual, canal: value }))
+                  }
+                  clearable
+                />
+              </Campo>
 
-          <Campo label="Tipo de Ocorrência" req>
-            <SearchSelect
-              options={cad.tipo}
-              value={form.tipo}
-              onChange={set("tipo")}
-              clearable
-            />
-          </Campo>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label>
+                  Origens
+                  <span className="text-destructive"> *</span>
+                </Label>
+                <CheckboxMultiSelect
+                  options={cad.origem}
+                  selectedIds={formCanalOrigem.origens}
+                  onChange={(origens) =>
+                    setFormCanalOrigem((atual) => ({ ...atual, origens }))
+                  }
+                  searchPlaceholder="Buscar Origem..."
+                  emptyMessage="Nenhuma Origem disponível."
+                  disabled={savingCanalOrigem}
+                />
+              </div>
+            </div>
 
-          <Campo label="Área de Interesse" req>
-            <SearchSelect
-              options={cad.area}
-              value={form.area}
-              onChange={set("area")}
-              clearable
-            />
-          </Campo>
-
-          <Campo label="Assunto" req>
-            <SearchSelect
-              options={cad.assunto}
-              value={form.assunto}
-              onChange={set("assunto")}
-              clearable
-            />
-          </Campo>
-
-          <Campo label="Subassunto">
-            <SearchSelect options={cad.subassunto} value={form.sub} onChange={set("sub")} clearable />
-          </Campo>
-
-          <Campo label="Detalhe da Ocorrência">
-            <SearchSelect options={cad.detalhe} value={form.detalhe} onChange={set("detalhe")} clearable />
-          </Campo>
-
-          <Campo label="Grau de Criticidade" req>
-            <SearchSelect
-              options={cad.criticidade}
-              value={form.criticidade}
-              onChange={set("criticidade")}
-              clearable
-            />
-          </Campo>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          <Button onClick={adicionar} disabled={saving || !obrigatoriosPreenchidos}>
-            {saving ? <Loader2 className="animate-spin" /> : <Plus />}
-            Adicionar Tabulação
-          </Button>
-
-          <Button variant="outline" onClick={() => setForm(vazio)} disabled={saving}>
-            <Eraser />
-            Limpar campos
-          </Button>
-        </div>
-      </div>
-
-      <div className="rounded-xl border bg-card p-4 md:p-6">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">Últimas tabulações</h2>
-            <p className="text-sm text-muted-foreground">
-              {tabulacoes.isFetching ? "Atualizando..." : `${total} registro(s) ativo(s)`}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Por página</span>
-              <select
-                className="h-8 rounded-md border border-input bg-card px-2"
-                value={pageSize}
-                onChange={(event) => setPageSize(Number(event.target.value))}
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button
+                onClick={adicionarCanalOrigem}
+                disabled={savingCanalOrigem || !obrigatoriosCanalOrigem}
               >
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </label>
+                {savingCanalOrigem ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
+                Adicionar Canal e Origens
+              </Button>
 
-            <Link to="/registros" className="text-sm text-primary hover:underline">
-              Ver todos os registros
-            </Link>
+              <Button
+                variant="outline"
+                onClick={() => setFormCanalOrigem(canalOrigemVazio)}
+                disabled={savingCanalOrigem}
+              >
+                <Eraser />
+                Limpar campos
+              </Button>
+            </div>
           </div>
-        </div>
 
-        {tabulacoes.isError ? (
-          <p className="text-sm text-destructive">
-            Não foi possível carregar suas tabulações.
-          </p>
-        ) : tabulacoes.isLoading ? (
-          <div className="flex justify-center py-10">
-            <Loader2 className="animate-spin text-primary" />
+          <div className="rounded-xl border bg-card p-4 md:p-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Canais e Origens cadastrados</h2>
+                <p className="text-sm text-muted-foreground">
+                  {canaisOrigens.isFetching
+                    ? "Atualizando..."
+                    : `${totalCanalOrigem} registro(s) ativo(s) cadastrado(s) por você.`}
+                </p>
+              </div>
+
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Por página</span>
+                <select
+                  className="h-8 rounded-md border border-input bg-card px-2"
+                  value={pageSizeCanalOrigem}
+                  onChange={(event) =>
+                    setPageSizeCanalOrigem(Number(event.target.value))
+                  }
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
+            </div>
+
+            {canaisOrigens.isLoading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="animate-spin text-primary" />
+              </div>
+            ) : canaisOrigens.isError ? (
+              <p className="text-sm text-destructive">
+                Não foi possível carregar os registros de Canal e Origem.
+              </p>
+            ) : canaisOrigens.data?.rows.length ? (
+              <CanaisOrigensTable
+                rows={canaisOrigens.data.rows}
+                usuarioAtualId={id.usuarioId}
+                onExcluir={setDelCanalOrigem}
+                mostrarAuditoriaExclusao={false}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhum Canal e Origem cadastrado ainda.
+              </p>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">
+                Total: {totalCanalOrigem} registro(s)
+              </span>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pageCanalOrigem === 0}
+                  onClick={() => setPageCanalOrigem((current) => current - 1)}
+                >
+                  Anterior
+                </Button>
+                <span>
+                  Página {pageCanalOrigem + 1} de {pagesCanalOrigem}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={pageCanalOrigem + 1 >= pagesCanalOrigem}
+                  onClick={() => setPageCanalOrigem((current) => current + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
           </div>
-        ) : tabulacoes.data?.rows.length ? (
-          <TabulacoesTable
-            rows={tabulacoes.data.rows}
-            usuarioAtualId={id.usuarioId}
-            onExcluir={setDel}
-            mostrarAuditoriaExclusao={false}
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Nenhuma tabulação cadastrada ainda.
-          </p>
-        )}
+        </TabsContent>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">Total: {total} registro(s)</span>
+        <TabsContent value="classificacao" className="space-y-4">
+          <div className="rounded-xl border bg-card p-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Campo label="Tipo de Ocorrência" req>
+                <SearchSelect
+                  options={cad.tipo}
+                  value={form.tipo}
+                  onChange={(value) =>
+                    setForm((atual) => ({ ...atual, tipo: value }))
+                  }
+                  clearable
+                />
+              </Campo>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              Anterior
-            </Button>
+              <Campo label="Área de Interesse" req>
+                <SearchSelect
+                  options={cad.area}
+                  value={form.area}
+                  onChange={(value) =>
+                    setForm((atual) => ({ ...atual, area: value }))
+                  }
+                  clearable
+                />
+              </Campo>
 
-            <span>
-              Página {page + 1} de {pages}
-            </span>
+              <div className="md:col-span-2">
+                <Campo label="Assunto" req>
+                  <SearchSelect
+                    options={cad.assunto}
+                    value={form.assunto}
+                    onChange={(value) => {
+                      setSubassuntosSelecionados([]);
+                      setDetalhesSelecionados({});
+                      setForm((atual) => ({ ...atual, assunto: value }));
+                    }}
+                    clearable
+                  />
+                </Campo>
+              </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page + 1 >= pages}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              Próxima
-            </Button>
+              <div className="space-y-1.5 md:col-span-2">
+                <Label>Subassuntos relacionados</Label>
+
+                {form.assunto == null ? (
+                  <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                    Selecione um Assunto para visualizar os Subassuntos relacionados.
+                  </div>
+                ) : subassuntosRelacionados.isLoading ? (
+                  <div className="flex justify-center rounded-lg border py-10">
+                    <Loader2 className="animate-spin text-primary" />
+                  </div>
+                ) : (
+                  <CheckboxMultiSelect
+                    options={subassuntosRelacionados.data ?? []}
+                    selectedIds={subassuntosSelecionados}
+                    onChange={setSubassuntosSelecionados}
+                    searchPlaceholder="Buscar Subassunto..."
+                    emptyMessage="Este Assunto não possui Subassuntos relacionados. A inclusão poderá ser feita sem Subassunto."
+                  />
+                )}
+              </div>
+
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <Label>Detalhes da Ocorrência por Subassunto</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Cada grupo mostra somente os Detalhes vinculados ao respectivo Subassunto.
+                    </p>
+                  </div>
+                </div>
+
+                {subassuntosSelecionados.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                    Selecione ao menos um Subassunto para visualizar seus Detalhes da Ocorrência.
+                  </div>
+                ) : detalhesPorSubassuntos.isLoading ? (
+                  <div className="flex justify-center rounded-lg border py-10">
+                    <Loader2 className="animate-spin text-primary" />
+                  </div>
+                ) : detalhesPorSubassuntos.isError ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-4 text-sm text-destructive">
+                    Não foi possível carregar os Detalhes da Ocorrência relacionados.
+                  </div>
+                ) : (
+                  <DetalhesPorSubassunto
+                    key={form.assunto ?? "sem-assunto"}
+                    grupos={gruposDetalhes}
+                    selecionados={detalhesSelecionados}
+                    onChange={(subassuntoId, detalheIds) =>
+                      setDetalhesSelecionados((atual) => ({
+                        ...atual,
+                        [subassuntoId]: detalheIds,
+                      }))
+                    }
+                    disabled={savingClassificacao}
+                  />
+                )}
+              </div>
+
+              <div className="max-w-md md:col-span-2">
+                <Campo label="Grau de Criticidade" req>
+                  <SearchSelect
+                    options={cad.criticidade}
+                    value={form.criticidade}
+                    onChange={(value) =>
+                      setForm((atual) => ({ ...atual, criticidade: value }))
+                    }
+                  />
+                </Campo>
+              </div>
+            </div>
+
+            {form.assunto != null && (
+              <div className="mt-5 rounded-lg border bg-muted/20 px-4 py-3">
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <span>
+                    <b>{subassuntosSelecionados.length}</b> subassunto(s) selecionado(s)
+                  </span>
+                  <span>
+                    <b>{totalDetalhesSelecionados}</b> detalhe(s) selecionado(s)
+                  </span>
+                  <span className="text-primary">
+                    <b>{totalTabulacoesPrevistas}</b> tabulação(ões) serão criada(s)
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Button
+                onClick={adicionarClassificacao}
+                disabled={
+                  savingClassificacao ||
+                  !obrigatoriosClassificacao ||
+                  (subassuntosSelecionados.length > 0 &&
+                    detalhesPorSubassuntos.isFetching)
+                }
+              >
+                {savingClassificacao ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
+                Adicionar Tabulação
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setForm({ ...classificacaoVazia, criticidade: normalId });
+                  setSubassuntosSelecionados([]);
+                  setDetalhesSelecionados({});
+                }}
+                disabled={savingClassificacao}
+              >
+                <Eraser />
+                Limpar campos
+              </Button>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <AlertDialog open={duplicada} onOpenChange={setDuplicada}>
+          <div className="rounded-xl border bg-card p-4 md:p-6">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Últimas tabulações</h2>
+                <p className="text-sm text-muted-foreground">
+                  {tabulacoes.isFetching
+                    ? "Atualizando..."
+                    : `${total} registro(s) ativo(s) cadastrado(s) por você.`}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground">Por página</span>
+                  <select
+                    className="h-8 rounded-md border border-input bg-card px-2"
+                    value={pageSize}
+                    onChange={(event) => setPageSize(Number(event.target.value))}
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+
+                <Link
+                  to="/registros"
+                  className="text-sm text-primary hover:underline"
+                >
+                  Ver todos os registros
+                </Link>
+              </div>
+            </div>
+
+            {tabulacoes.isError ? (
+              <p className="text-sm text-destructive">
+                Não foi possível carregar suas tabulações.
+              </p>
+            ) : tabulacoes.isLoading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="animate-spin text-primary" />
+              </div>
+            ) : tabulacoes.data?.rows.length ? (
+              <TabulacoesTable
+                rows={tabulacoes.data.rows}
+                usuarioAtualId={id.usuarioId}
+                onExcluir={setDel}
+                onEditarCriticidade={abrirEdicaoCriticidade}
+                mostrarAuditoriaExclusao={false}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma tabulação cadastrada ainda.
+              </p>
+            )}
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">
+                Total: {total} registro(s)
+              </span>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page === 0}
+                  onClick={() => setPage((current) => current - 1)}
+                >
+                  Anterior
+                </Button>
+                <span>
+                  Página {page + 1} de {pages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page + 1 >= pages}
+                  onClick={() => setPage((current) => current + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      <AlertDialog
+        open={confirmarSemSubassunto}
+        onOpenChange={setConfirmarSemSubassunto}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Tabulação já cadastrada</AlertDialogTitle>
+            <AlertDialogTitle>Nenhum Subassunto selecionado</AlertDialogTitle>
             <AlertDialogDescription>
-              Já existe uma tabulação ativa com a mesma combinação de Canal,
-              Origem, Tipo, Assunto, Subassunto, Área de Interesse e Detalhe da
-              Ocorrência para o seu usuário. O Grau de Criticidade não diferencia
-              uma tabulação duplicada. Nenhum novo registro foi criado e os campos
-              selecionados foram mantidos.
+              Nenhum Subassunto está selecionado. Deseja mesmo assim prosseguir?
+              Será criada uma tabulação sem Subassunto e sem Detalhe da Ocorrência.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setDuplicada(false)}>
-              Entendi
+            <AlertDialogCancel>Não</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarSemSubassunto(false);
+                void salvarClassificacao();
+              }}
+            >
+              Sim, prosseguir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmarSemDetalhes.length > 0}
+        onOpenChange={(open) => !open && setConfirmarSemDetalhes([])}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Subassunto(s) sem Detalhe da Ocorrência selecionado
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Existem Subassuntos com Detalhes disponíveis, mas nenhum deles foi
+                  selecionado. Deseja cadastrá-los mesmo assim sem Detalhe da Ocorrência?
+                </p>
+                <ul className="max-h-40 list-disc overflow-y-auto pl-5 text-sm">
+                  {confirmarSemDetalhes.map((nome) => (
+                    <li key={nome}>{nome}</li>
+                  ))}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Não</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarSemDetalhes([]);
+                void salvarClassificacao();
+              }}
+            >
+              Sim, prosseguir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!delCanalOrigem}
+        onOpenChange={(open) => !open && setDelCanalOrigem(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este Canal e Origem?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O registro será marcado como excluído. Canal:{" "}
+              <b>{delCanalOrigem?.canal}</b> · Origem:{" "}
+              <b>{delCanalOrigem?.origem}</b>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={excluirCanalOrigem}
+              disabled={deleting}
+            >
+              {deleting ? "Excluindo..." : "Excluir"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -507,6 +1238,47 @@ function Cadastro({ id }: { id: Identidade }) {
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={excluir} disabled={deleting}>
               {deleting ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!editando}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditando(null);
+            setCriticidadeEdicao(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Editar Grau de Criticidade</AlertDialogTitle>
+            <AlertDialogDescription>
+              Somente a criticidade do registro ID <b>{editando?.id_registro}</b>{" "}
+              será alterada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-1.5">
+            <Label>Grau de Criticidade</Label>
+            <SearchSelect
+              options={cad.criticidade}
+              value={criticidadeEdicao}
+              onChange={setCriticidadeEdicao}
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={salvandoEdicao}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={salvarCriticidade}
+              disabled={salvandoEdicao || criticidadeEdicao == null}
+            >
+              {salvandoEdicao ? "Salvando..." : "Salvar"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

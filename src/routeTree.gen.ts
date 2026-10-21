@@ -1,3 +1,5 @@
+//crm/src/routeTree.gen.ts
+
 /* eslint-disable */
 
 // @ts-nocheck
@@ -11,7 +13,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CadastroRouteImport } from './routes/cadastro'
+import { Route as CadastrosRouteImport } from './routes/cadastros'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ParametrizacaoRouteImport } from './routes/parametrizacao'
 import { Route as RegistrosRouteImport } from './routes/registros'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,9 +28,19 @@ const CadastroRoute = CadastroRouteImport.update({
   path: '/cadastro',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CadastrosRoute = CadastrosRouteImport.update({
+  id: '/cadastros',
+  path: '/cadastros',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ParametrizacaoRoute = ParametrizacaoRouteImport.update({
+  id: '/parametrizacao',
+  path: '/parametrizacao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegistrosRoute = RegistrosRouteImport.update({
@@ -38,34 +52,42 @@ const RegistrosRoute = RegistrosRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/cadastros': typeof CadastrosRoute
   '/dashboard': typeof DashboardRoute
+  '/parametrizacao': typeof ParametrizacaoRoute
   '/registros': typeof RegistrosRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/cadastros': typeof CadastrosRoute
   '/dashboard': typeof DashboardRoute
+  '/parametrizacao': typeof ParametrizacaoRoute
   '/registros': typeof RegistrosRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/cadastros': typeof CadastrosRoute
   '/dashboard': typeof DashboardRoute
+  '/parametrizacao': typeof ParametrizacaoRoute
   '/registros': typeof RegistrosRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/cadastro' | '/dashboard' | '/registros'
+  fullPaths: '/' | '/cadastro' | '/cadastros' | '/dashboard' | '/parametrizacao' | '/registros'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cadastro' | '/dashboard' | '/registros'
-  id: '__root__' | '/' | '/cadastro' | '/dashboard' | '/registros'
+  to: '/' | '/cadastro' | '/cadastros' | '/dashboard' | '/parametrizacao' | '/registros'
+  id: '__root__' | '/' | '/cadastro' | '/cadastros' | '/dashboard' | '/parametrizacao' | '/registros'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CadastroRoute: typeof CadastroRoute
+  CadastrosRoute: typeof CadastrosRoute
   DashboardRoute: typeof DashboardRoute
+  ParametrizacaoRoute: typeof ParametrizacaoRoute
   RegistrosRoute: typeof RegistrosRoute
 }
 
@@ -85,11 +107,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CadastroRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cadastros': {
+      id: '/cadastros'
+      path: '/cadastros'
+      fullPath: '/cadastros'
+      preLoaderRoute: typeof CadastrosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/parametrizacao': {
+      id: '/parametrizacao'
+      path: '/parametrizacao'
+      fullPath: '/parametrizacao'
+      preLoaderRoute: typeof ParametrizacaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/registros': {
@@ -105,7 +141,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CadastroRoute: CadastroRoute,
+  CadastrosRoute: CadastrosRoute,
   DashboardRoute: DashboardRoute,
+  ParametrizacaoRoute: ParametrizacaoRoute,
   RegistrosRoute: RegistrosRoute,
 }
 export const routeTree = rootRouteImport

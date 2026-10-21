@@ -5,6 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import {
   BarChart3,
   ClipboardList,
+  Database,
   Loader2,
   LogOut,
   Table2,
@@ -18,7 +19,7 @@ import {
 } from "@/lib/session";
 import { encerrarSessao } from "@/lib/usuarios.functions";
 
-const nav = [
+const navPrincipal = [
   {
     to: "/cadastro",
     label: "Cadastro de Tabulações",
@@ -33,6 +34,14 @@ const nav = [
     to: "/dashboard",
     label: "Dashboard",
     icon: BarChart3,
+  },
+] as const;
+
+const navAdministrador = [
+  {
+    to: "/cadastros",
+    label: "Cadastro",
+    icon: Database,
   },
 ] as const;
 
@@ -68,6 +77,11 @@ export function AppShell({
       navigate({ to: "/" });
     }
   }
+
+  const nav =
+    id.perfil === "ADMINISTRADOR"
+      ? [...navPrincipal, ...navAdministrador]
+      : navPrincipal;
 
   return (
     <div className="min-h-screen">

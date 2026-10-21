@@ -1,72 +1,85 @@
 //crm/src/lib/exportar.ts
 
 import {
+  exportarCanaisOrigensCRM,
+  type CanalOrigemExportacaoCRM,
+  type FiltrosCanalOrigemCRM,
+} from "./canal-origem.functions";
+import {
   exportarTabulacoesCRM,
   type FiltrosTabulacoesCRM,
   type TabulacaoExportacaoCRM,
 } from "./crm.functions";
-import type { Identidade } from "./session";
 
-const COLS = [
-  { h: "Canal", k: "canal", w: 18 },
-  { h: "Origem", k: "origem", w: 22 },
+type ColunaClassificacao = {
+  h: string;
+  k: keyof TabulacaoExportacaoCRM;
+  w: number;
+};
+
+type ColunaCanalOrigem = {
+  h: string;
+  k: keyof CanalOrigemExportacaoCRM;
+  w: number;
+};
+
+const COLS_CLASSIFICACAO: ColunaClassificacao[] = [
   { h: "Tipo de Ocorrência", k: "tipo_ocorrencia", w: 22 },
-  { h: "Assunto", k: "assunto", w: 30 },
-  { h: "Subassunto", k: "subassunto", w: 30 },
-  { h: "Área de Interesse", k: "area_interesse", w: 24 },
-  { h: "Detalhe da Ocorrência", k: "detalhe_ocorrencia", w: 30 },
+  { h: "Área de Interesse", k: "area_interesse", w: 30 },
+  { h: "Assunto", k: "assunto", w: 34 },
+  { h: "Subassunto", k: "subassunto", w: 38 },
+  { h: "Detalhe da Ocorrência", k: "detalhe_ocorrencia", w: 38 },
   { h: "Grau de Criticidade", k: "criticidade", w: 22 },
   { h: "Nome do Usuário", k: "nome_usuario", w: 28 },
-  { h: "Setor do Usuário", k: "setor_usuario", w: 24 },
+  { h: "Setor do Usuário", k: "setor_usuario", w: 28 },
   { h: "Data e Hora da Criação", k: "data_hora_inclusao", w: 22 },
   { h: "ID do Registro", k: "id_registro", w: 14 },
-] as const;
+];
 
-function slug(s: string) {
-  return s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+const COLS_CANAL_ORIGEM: ColunaCanalOrigem[] = [
+  { h: "Canal", k: "canal", w: 24 },
+  { h: "Origem", k: "origem", w: 38 },
+  { h: "Nome do Usuário", k: "nome_usuario", w: 28 },
+  { h: "Setor do Usuário", k: "setor_usuario", w: 28 },
+  { h: "Data e Hora da Criação", k: "data_hora_inclusao", w: 22 },
+  { h: "ID do Registro", k: "id_registro", w: 14 },
+];
+
+function dataArquivo() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
 }
 
-export async function exportarTabulacoes({
-  id,
-  somenteMinhas,
-  filtros,
+async function baixarWorkbook<T extends object>({
+  rows,
+  colunas,
+  aba,
+  nomeArquivo,
 }: {
-  id: Identidade;
-  somenteMinhas: boolean;
-  filtros: FiltrosTabulacoesCRM;
-}): Promise<number> {
-  const rows = (await exportarTabulacoesCRM({
-    data: {
-      somenteMinhas,
-      filtros,
-    },
-  })) as TabulacaoExportacaoCRM[];
-
-  if (rows.length === 0) return 0;
-
+  rows: T[];
+  colunas: { h: string; k: keyof T; w: number }[];
+  aba: string;
+  nomeArquivo: string;
+}) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Tabulações");
+  const ws = wb.addWorksheet(aba);
 
-  ws.columns = COLS.map((c) => ({
+  ws.columns = colunas.map((c) => ({
     header: c.h,
-    key: c.k,
+    key: String(c.k),
     width: c.w,
   }));
 
   for (const r of rows) {
     const line: Record<string, unknown> = {};
 
-    for (const c of COLS) {
+    for (const c of colunas) {
       const v = r[c.k];
-      line[c.k] =
-        c.k === "data_hora_inclusao" && v
-          ? new Date(v as string)
-          : (v ?? "");
+      line[String(c.k)] =
+        c.k === "data_hora_inclusao" && v ? new Date(v as string) : (v ?? "");
     }
 
     ws.addRow(line);
@@ -88,29 +101,65 @@ export async function exportarTabulacoes({
   ws.getColumn("data_hora_inclusao").numFmt = "dd/mm/yyyy hh:mm:ss";
   ws.autoFilter = {
     from: { row: 1, column: 1 },
-    to: { row: rows.length + 1, column: COLS.length },
+    to: { row: rows.length + 1, column: colunas.length },
   };
   ws.views = [{ state: "frozen", ySplit: 1 }];
 
   const buf = await wb.xlsx.writeBuffer();
-  const d = new Date();
-  const data = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-  const escopo = somenteMinhas ? `Minhas_${slug(id.nome)}` : "Todas";
-  const nome = `Tabulacoes_CRM_${escopo}_${data}.xlsx`;
-
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = nome;
+  a.download = nomeArquivo;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export async function exportarClassificacoes({
+  filtros,
+}: {
+  filtros: FiltrosTabulacoesCRM;
+}): Promise<number> {
+  const rows = (await exportarTabulacoesCRM({
+    data: {
+      somenteMinhas: false,
+      filtros,
+    },
+  })) as TabulacaoExportacaoCRM[];
+
+  if (rows.length === 0) return 0;
+
+  await baixarWorkbook<TabulacaoExportacaoCRM>({
+    rows,
+    colunas: COLS_CLASSIFICACAO,
+    aba: "Classificação",
+    nomeArquivo: `Tabulacoes_CRM_Classificacao_${dataArquivo()}.xlsx`,
+  });
+
+  return rows.length;
+}
+
+export async function exportarCanaisOrigens({
+  filtros,
+}: {
+  filtros: FiltrosCanalOrigemCRM;
+}): Promise<number> {
+  const rows = (await exportarCanaisOrigensCRM({
+    data: { filtros },
+  })) as CanalOrigemExportacaoCRM[];
+
+  if (rows.length === 0) return 0;
+
+  await baixarWorkbook<CanalOrigemExportacaoCRM>({
+    rows,
+    colunas: COLS_CANAL_ORIGEM,
+    aba: "Canal e Origem",
+    nomeArquivo: `Tabulacoes_CRM_Canal_Origem_${dataArquivo()}.xlsx`,
+  });
 
   return rows.length;
 }
