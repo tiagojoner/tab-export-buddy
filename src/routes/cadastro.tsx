@@ -19,6 +19,10 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { CanaisOrigensTable } from "@/components/CanaisOrigensTable";
 import { CheckboxMultiSelect } from "@/components/CheckboxMultiSelect";
+import {
+  DetalhesPorSubassunto,
+  type GrupoDetalhesSubassunto,
+} from "@/components/DetalhesPorSubassunto";
 import { SearchSelect } from "@/components/SearchSelect";
 import { TabulacoesTable } from "@/components/TabulacoesTable";
 import {
@@ -45,8 +49,10 @@ import {
   atualizarCriticidadeTabulacaoCRM,
   excluirTabulacaoCRM,
   inserirClassificacoesCRM,
+  listarDetalhesPorSubassuntosCRM,
   listarSubassuntosRelacionadosCRM,
   listarTabulacoesCRM,
+  type CombinacaoClassificacaoCRM,
   type FiltrosTabulacoesCRM,
   type TabulacaoCRM,
 } from "@/lib/crm.functions";
@@ -76,7 +82,6 @@ type FormClassificacao = {
   tipo: number | null;
   assunto: number | null;
   area: number | null;
-  detalhe: number | null;
   criticidade: number | null;
 };
 
@@ -85,11 +90,12 @@ type FormCanalOrigem = {
   origens: number[];
 };
 
+type DetalhesSelecionados = Record<number, number[]>;
+
 const classificacaoVazia: FormClassificacao = {
   tipo: null,
   assunto: null,
   area: null,
-  detalhe: null,
   criticidade: null,
 };
 
@@ -117,6 +123,26 @@ function normalizar(value: string) {
     .toLowerCase();
 }
 
+function Campo({
+  label,
+  req,
+  children,
+}: {
+  label: string;
+  req?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>
+        {label}
+        {req && <span className="text-destructive"> *</span>}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
 function Cadastro({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
   const [aba, setAba] = useState("canal-origem");
@@ -124,11 +150,16 @@ function Cadastro({ id }: { id: Identidade }) {
   const [formCanalOrigem, setFormCanalOrigem] =
     useState<FormCanalOrigem>(canalOrigemVazio);
   const [form, setForm] = useState<FormClassificacao>(classificacaoVazia);
-  const [subassuntosSelecionados, setSubassuntosSelecionados] = useState<number[]>([]);
+  const [subassuntosSelecionados, setSubassuntosSelecionados] = useState<
+    number[]
+  >([]);
+  const [detalhesSelecionados, setDetalhesSelecionados] =
+    useState<DetalhesSelecionados>({});
 
   const [savingCanalOrigem, setSavingCanalOrigem] = useState(false);
   const [savingClassificacao, setSavingClassificacao] = useState(false);
   const [confirmarSemSubassunto, setConfirmarSemSubassunto] = useState(false);
+  const [confirmarSemDetalhes, setConfirmarSemDetalhes] = useState<string[]>([]);
 
   const [delCanalOrigem, setDelCanalOrigem] =
     useState<CanalOrigemRegistradoCRM | null>(null);
@@ -160,6 +191,21 @@ function Cadastro({ id }: { id: Identidade }) {
     queryFn: () =>
       listarSubassuntosRelacionadosCRM({
         data: { assuntoId: form.assunto! },
+      }),
+  });
+
+  const subassuntosOrdenados = useMemo(
+    () => [...subassuntosSelecionados].sort((a, b) => a - b),
+    [subassuntosSelecionados],
+  );
+
+  const detalhesPorSubassuntos = useQuery({
+    queryKey: ["detalhes-por-subassuntos", subassuntosOrdenados],
+    enabled: subassuntosOrdenados.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      listarDetalhesPorSubassuntosCRM({
+        data: { subassuntoIds: subassuntosOrdenados },
       }),
   });
 
@@ -222,7 +268,13 @@ function Cadastro({ id }: { id: Identidade }) {
     try {
       const raw = sessionStorage.getItem("gtc_form_classificacao");
       if (raw) {
-        setForm({ ...classificacaoVazia, ...JSON.parse(raw) });
+        const salvo = JSON.parse(raw) as Partial<FormClassificacao>;
+        setForm({
+          tipo: salvo.tipo ?? null,
+          assunto: salvo.assunto ?? null,
+          area: salvo.area ?? null,
+          criticidade: salvo.criticidade ?? null,
+        });
       }
     } catch {
       // Ignora formulário inválido salvo anteriormente.
@@ -262,11 +314,6 @@ function Cadastro({ id }: { id: Identidade }) {
         tipo: existe(cad.tipo, atual.tipo) ? atual.tipo : null,
         assunto: existe(cad.assunto, atual.assunto) ? atual.assunto : null,
         area: existe(cad.area, atual.area) ? atual.area : null,
-        detalhe:
-          cad.configuracao.exibirDetalheOcorrencia &&
-          existe(cad.detalhe, atual.detalhe)
-            ? atual.detalhe
-            : null,
         criticidade: existe(cad.criticidade, atual.criticidade)
           ? (atual.criticidade ?? normal?.id ?? null)
           : (normal?.id ?? null),
@@ -277,6 +324,7 @@ function Cadastro({ id }: { id: Identidade }) {
   useEffect(() => {
     if (form.assunto == null) {
       setSubassuntosSelecionados([]);
+      setDetalhesSelecionados({});
       return;
     }
 
@@ -284,8 +332,50 @@ function Cadastro({ id }: { id: Identidade }) {
       setSubassuntosSelecionados(
         subassuntosRelacionados.data.map((item) => item.id),
       );
+      setDetalhesSelecionados({});
     }
   }, [form.assunto, subassuntosRelacionados.data]);
+
+  useEffect(() => {
+    if (subassuntosSelecionados.length === 0) {
+      setDetalhesSelecionados({});
+      return;
+    }
+
+    if (detalhesPorSubassuntos.data === undefined) return;
+
+    const disponiveis = new Map<number, number[]>();
+
+    for (const subassuntoId of subassuntosSelecionados) {
+      disponiveis.set(subassuntoId, []);
+    }
+
+    for (const detalhe of detalhesPorSubassuntos.data) {
+      const atuais = disponiveis.get(detalhe.subassuntoId) ?? [];
+      atuais.push(detalhe.detalheId);
+      disponiveis.set(detalhe.subassuntoId, atuais);
+    }
+
+    setDetalhesSelecionados((atual) => {
+      const proximo: DetalhesSelecionados = {};
+
+      for (const subassuntoId of subassuntosSelecionados) {
+        const idsDisponiveis = disponiveis.get(subassuntoId) ?? [];
+        const jaExistia = Object.prototype.hasOwnProperty.call(
+          atual,
+          subassuntoId,
+        );
+
+        proximo[subassuntoId] = jaExistia
+          ? (atual[subassuntoId] ?? []).filter((idDetalhe) =>
+              idsDisponiveis.includes(idDetalhe),
+            )
+          : idsDisponiveis;
+      }
+
+      return proximo;
+    });
+  }, [subassuntosSelecionados, detalhesPorSubassuntos.data]);
 
   useEffect(() => {
     setPageCanalOrigem(0);
@@ -322,6 +412,55 @@ function Cadastro({ id }: { id: Identidade }) {
       null,
     [cad?.criticidade],
   );
+
+  const gruposDetalhes = useMemo<GrupoDetalhesSubassunto[]>(() => {
+    const subassuntos = subassuntosRelacionados.data ?? [];
+    const detalhes = detalhesPorSubassuntos.data ?? [];
+    const porSubassunto = new Map<number, { id: number; nome: string }[]>();
+
+    for (const detalhe of detalhes) {
+      const lista = porSubassunto.get(detalhe.subassuntoId) ?? [];
+      lista.push({ id: detalhe.detalheId, nome: detalhe.nome });
+      porSubassunto.set(detalhe.subassuntoId, lista);
+    }
+
+    return subassuntosSelecionados
+      .map((subassuntoId) => {
+        const subassunto = subassuntos.find((item) => item.id === subassuntoId);
+
+        if (!subassunto) return null;
+
+        return {
+          subassuntoId,
+          subassuntoNome: subassunto.nome,
+          detalhes: porSubassunto.get(subassuntoId) ?? [],
+        };
+      })
+      .filter((grupo): grupo is GrupoDetalhesSubassunto => grupo !== null);
+  }, [
+    detalhesPorSubassuntos.data,
+    subassuntosRelacionados.data,
+    subassuntosSelecionados,
+  ]);
+
+  const totalDetalhesSelecionados = useMemo(
+    () =>
+      subassuntosSelecionados.reduce(
+        (totalAtual, subassuntoId) =>
+          totalAtual + (detalhesSelecionados[subassuntoId]?.length ?? 0),
+        0,
+      ),
+    [detalhesSelecionados, subassuntosSelecionados],
+  );
+
+  const totalTabulacoesPrevistas = useMemo(() => {
+    if (subassuntosSelecionados.length === 0) return 1;
+
+    return subassuntosSelecionados.reduce((totalAtual, subassuntoId) => {
+      const quantidadeDetalhes = detalhesSelecionados[subassuntoId]?.length ?? 0;
+      return totalAtual + Math.max(1, quantidadeDetalhes);
+    }, 0);
+  }, [detalhesSelecionados, subassuntosSelecionados]);
 
   const obrigatoriosCanalOrigem =
     formCanalOrigem.canal != null && formCanalOrigem.origens.length > 0;
@@ -395,6 +534,25 @@ function Cadastro({ id }: { id: Identidade }) {
     }
   }
 
+  function montarCombinacoes(): CombinacaoClassificacaoCRM[] {
+    if (subassuntosSelecionados.length === 0) {
+      return [{ subassuntoId: null, detalheId: null }];
+    }
+
+    return subassuntosSelecionados.flatMap((subassuntoId) => {
+      const detalheIds = detalhesSelecionados[subassuntoId] ?? [];
+
+      if (detalheIds.length === 0) {
+        return [{ subassuntoId, detalheId: null }];
+      }
+
+      return detalheIds.map((detalheId) => ({
+        subassuntoId,
+        detalheId,
+      }));
+    });
+  }
+
   async function salvarClassificacao() {
     if (!obrigatoriosClassificacao) {
       toast.error("Preencha todos os campos obrigatórios.");
@@ -408,11 +566,8 @@ function Cadastro({ id }: { id: Identidade }) {
         data: {
           tipo: form.tipo!,
           assunto: form.assunto!,
-          subassuntos: subassuntosSelecionados,
+          combinacoes: montarCombinacoes(),
           area: form.area!,
-          detalhe: cad?.configuracao.exibirDetalheOcorrencia
-            ? form.detalhe
-            : null,
           criticidade: form.criticidade!,
         },
       });
@@ -450,6 +605,24 @@ function Cadastro({ id }: { id: Identidade }) {
 
     if (subassuntosSelecionados.length === 0) {
       setConfirmarSemSubassunto(true);
+      return;
+    }
+
+    if (detalhesPorSubassuntos.isLoading || detalhesPorSubassuntos.isFetching) {
+      toast.info("Aguarde o carregamento dos Detalhes da Ocorrência.");
+      return;
+    }
+
+    const semDetalhesSelecionados = gruposDetalhes.filter(
+      (grupo) =>
+        grupo.detalhes.length > 0 &&
+        (detalhesSelecionados[grupo.subassuntoId]?.length ?? 0) === 0,
+    );
+
+    if (semDetalhesSelecionados.length > 0) {
+      setConfirmarSemDetalhes(
+        semDetalhesSelecionados.map((grupo) => grupo.subassuntoNome),
+      );
       return;
     }
 
@@ -549,7 +722,9 @@ function Cadastro({ id }: { id: Identidade }) {
           <AlertCircle className="mt-0.5 size-5 text-destructive" />
           <div className="space-y-3">
             <div>
-              <h1 className="font-semibold">Não foi possível carregar os cadastros</h1>
+              <h1 className="font-semibold">
+                Não foi possível carregar os cadastros
+              </h1>
               <p className="mt-1 text-sm text-muted-foreground">
                 O sistema não conseguiu consultar os dados do CRM no PostgreSQL.
               </p>
@@ -563,24 +738,6 @@ function Cadastro({ id }: { id: Identidade }) {
       </div>
     );
   }
-
-  const Campo = ({
-    label,
-    req,
-    children,
-  }: {
-    label: string;
-    req?: boolean;
-    children: ReactNode;
-  }) => (
-    <div className="space-y-1.5">
-      <Label>
-        {label}
-        {req && <span className="text-destructive"> *</span>}
-      </Label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="space-y-6">
@@ -634,7 +791,11 @@ function Cadastro({ id }: { id: Identidade }) {
                 onClick={adicionarCanalOrigem}
                 disabled={savingCanalOrigem || !obrigatoriosCanalOrigem}
               >
-                {savingCanalOrigem ? <Loader2 className="animate-spin" /> : <Plus />}
+                {savingCanalOrigem ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
                 Adicionar Canal e Origens
               </Button>
 
@@ -752,27 +913,20 @@ function Cadastro({ id }: { id: Identidade }) {
                 />
               </Campo>
 
-              <Campo label="Assunto" req>
-                <SearchSelect
-                  options={cad.assunto}
-                  value={form.assunto}
-                  onChange={(value) => {
-                    setSubassuntosSelecionados([]);
-                    setForm((atual) => ({ ...atual, assunto: value }));
-                  }}
-                  clearable
-                />
-              </Campo>
-
-              <Campo label="Grau de Criticidade" req>
-                <SearchSelect
-                  options={cad.criticidade}
-                  value={form.criticidade}
-                  onChange={(value) =>
-                    setForm((atual) => ({ ...atual, criticidade: value }))
-                  }
-                />
-              </Campo>
+              <div className="md:col-span-2">
+                <Campo label="Assunto" req>
+                  <SearchSelect
+                    options={cad.assunto}
+                    value={form.assunto}
+                    onChange={(value) => {
+                      setSubassuntosSelecionados([]);
+                      setDetalhesSelecionados({});
+                      setForm((atual) => ({ ...atual, assunto: value }));
+                    }}
+                    clearable
+                  />
+                </Campo>
+              </div>
 
               <div className="space-y-1.5 md:col-span-2">
                 <Label>Subassuntos relacionados</Label>
@@ -796,26 +950,88 @@ function Cadastro({ id }: { id: Identidade }) {
                 )}
               </div>
 
-              {cad.configuracao.exibirDetalheOcorrencia && (
-                <Campo label="Detalhe da Ocorrência">
-                  <SearchSelect
-                    options={cad.detalhe}
-                    value={form.detalhe}
-                    onChange={(value) =>
-                      setForm((atual) => ({ ...atual, detalhe: value }))
+              <div className="space-y-1.5 md:col-span-2">
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <Label>Detalhes da Ocorrência por Subassunto</Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Cada grupo mostra somente os Detalhes vinculados ao respectivo Subassunto.
+                    </p>
+                  </div>
+                </div>
+
+                {subassuntosSelecionados.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                    Selecione ao menos um Subassunto para visualizar seus Detalhes da Ocorrência.
+                  </div>
+                ) : detalhesPorSubassuntos.isLoading ? (
+                  <div className="flex justify-center rounded-lg border py-10">
+                    <Loader2 className="animate-spin text-primary" />
+                  </div>
+                ) : detalhesPorSubassuntos.isError ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-4 text-sm text-destructive">
+                    Não foi possível carregar os Detalhes da Ocorrência relacionados.
+                  </div>
+                ) : (
+                  <DetalhesPorSubassunto
+                    key={form.assunto ?? "sem-assunto"}
+                    grupos={gruposDetalhes}
+                    selecionados={detalhesSelecionados}
+                    onChange={(subassuntoId, detalheIds) =>
+                      setDetalhesSelecionados((atual) => ({
+                        ...atual,
+                        [subassuntoId]: detalheIds,
+                      }))
                     }
-                    clearable
+                    disabled={savingClassificacao}
+                  />
+                )}
+              </div>
+
+              <div className="max-w-md md:col-span-2">
+                <Campo label="Grau de Criticidade" req>
+                  <SearchSelect
+                    options={cad.criticidade}
+                    value={form.criticidade}
+                    onChange={(value) =>
+                      setForm((atual) => ({ ...atual, criticidade: value }))
+                    }
                   />
                 </Campo>
-              )}
+              </div>
             </div>
+
+            {form.assunto != null && (
+              <div className="mt-5 rounded-lg border bg-muted/20 px-4 py-3">
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <span>
+                    <b>{subassuntosSelecionados.length}</b> subassunto(s) selecionado(s)
+                  </span>
+                  <span>
+                    <b>{totalDetalhesSelecionados}</b> detalhe(s) selecionado(s)
+                  </span>
+                  <span className="text-primary">
+                    <b>{totalTabulacoesPrevistas}</b> tabulação(ões) serão criada(s)
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 flex flex-wrap gap-2">
               <Button
                 onClick={adicionarClassificacao}
-                disabled={savingClassificacao || !obrigatoriosClassificacao}
+                disabled={
+                  savingClassificacao ||
+                  !obrigatoriosClassificacao ||
+                  (subassuntosSelecionados.length > 0 &&
+                    detalhesPorSubassuntos.isFetching)
+                }
               >
-                {savingClassificacao ? <Loader2 className="animate-spin" /> : <Plus />}
+                {savingClassificacao ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Plus />
+                )}
                 Adicionar Tabulação
               </Button>
 
@@ -824,6 +1040,7 @@ function Cadastro({ id }: { id: Identidade }) {
                 onClick={() => {
                   setForm({ ...classificacaoVazia, criticidade: normalId });
                   setSubassuntosSelecionados([]);
+                  setDetalhesSelecionados({});
                 }}
                 disabled={savingClassificacao}
               >
@@ -858,7 +1075,10 @@ function Cadastro({ id }: { id: Identidade }) {
                   </select>
                 </label>
 
-                <Link to="/registros" className="text-sm text-primary hover:underline">
+                <Link
+                  to="/registros"
+                  className="text-sm text-primary hover:underline"
+                >
                   Ver todos os registros
                 </Link>
               </div>
@@ -878,7 +1098,6 @@ function Cadastro({ id }: { id: Identidade }) {
                 usuarioAtualId={id.usuarioId}
                 onExcluir={setDel}
                 onEditarCriticidade={abrirEdicaoCriticidade}
-                mostrarDetalhe={cad.configuracao.exibirDetalheOcorrencia}
                 mostrarAuditoriaExclusao={false}
               />
             ) : (
@@ -888,7 +1107,9 @@ function Cadastro({ id }: { id: Identidade }) {
             )}
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-              <span className="text-muted-foreground">Total: {total} registro(s)</span>
+              <span className="text-muted-foreground">
+                Total: {total} registro(s)
+              </span>
 
               <div className="flex items-center gap-2">
                 <Button
@@ -925,7 +1146,7 @@ function Cadastro({ id }: { id: Identidade }) {
             <AlertDialogTitle>Nenhum Subassunto selecionado</AlertDialogTitle>
             <AlertDialogDescription>
               Nenhum Subassunto está selecionado. Deseja mesmo assim prosseguir?
-              Será criada uma tabulação sem Subassunto.
+              Será criada uma tabulação sem Subassunto e sem Detalhe da Ocorrência.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -943,6 +1164,43 @@ function Cadastro({ id }: { id: Identidade }) {
       </AlertDialog>
 
       <AlertDialog
+        open={confirmarSemDetalhes.length > 0}
+        onOpenChange={(open) => !open && setConfirmarSemDetalhes([])}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Subassunto(s) sem Detalhe da Ocorrência selecionado
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Existem Subassuntos com Detalhes disponíveis, mas nenhum deles foi
+                  selecionado. Deseja cadastrá-los mesmo assim sem Detalhe da Ocorrência?
+                </p>
+                <ul className="max-h-40 list-disc overflow-y-auto pl-5 text-sm">
+                  {confirmarSemDetalhes.map((nome) => (
+                    <li key={nome}>{nome}</li>
+                  ))}
+                </ul>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Não</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarSemDetalhes([]);
+                void salvarClassificacao();
+              }}
+            >
+              Sim, prosseguir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
         open={!!delCanalOrigem}
         onOpenChange={(open) => !open && setDelCanalOrigem(null)}
       >
@@ -950,13 +1208,17 @@ function Cadastro({ id }: { id: Identidade }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir este Canal e Origem?</AlertDialogTitle>
             <AlertDialogDescription>
-              O registro será marcado como excluído. Canal: <b>{delCanalOrigem?.canal}</b> · Origem:{" "}
+              O registro será marcado como excluído. Canal:{" "}
+              <b>{delCanalOrigem?.canal}</b> · Origem:{" "}
               <b>{delCanalOrigem?.origem}</b>.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={excluirCanalOrigem} disabled={deleting}>
+            <AlertDialogAction
+              onClick={excluirCanalOrigem}
+              disabled={deleting}
+            >
               {deleting ? "Excluindo..." : "Excluir"}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -994,7 +1256,8 @@ function Cadastro({ id }: { id: Identidade }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Editar Grau de Criticidade</AlertDialogTitle>
             <AlertDialogDescription>
-              Somente a criticidade do registro ID <b>{editando?.id_registro}</b> será alterada.
+              Somente a criticidade do registro ID <b>{editando?.id_registro}</b>{" "}
+              será alterada.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -1008,7 +1271,9 @@ function Cadastro({ id }: { id: Identidade }) {
           </div>
 
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={salvandoEdicao}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel disabled={salvandoEdicao}>
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={salvarCriticidade}
               disabled={salvandoEdicao || criticidadeEdicao == null}
