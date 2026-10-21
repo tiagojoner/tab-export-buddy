@@ -14,12 +14,10 @@ export function ExportButton({
   tipo,
   filtrosClassificacao,
   filtrosCanalOrigem,
-  mostrarDetalhe = false,
 }: {
   tipo: "classificacao" | "canal-origem";
   filtrosClassificacao?: FiltrosTabulacoesCRM;
   filtrosCanalOrigem?: FiltrosCanalOrigemCRM;
-  mostrarDetalhe?: boolean;
 }) {
   const [id] = useIdentidade();
   const [busy, setBusy] = useState(false);
@@ -34,7 +32,6 @@ export function ExportButton({
         tipo === "classificacao"
           ? await exportarClassificacoes({
               filtros: filtrosClassificacao!,
-              mostrarDetalhe,
             })
           : await exportarCanaisOrigens({
               filtros: filtrosCanalOrigem!,
@@ -60,7 +57,11 @@ export function ExportButton({
     tipo === "classificacao" ? !!filtrosClassificacao : !!filtrosCanalOrigem;
 
   return (
-    <Button variant="outline" onClick={run} disabled={busy || !id || !filtrosDisponiveis}>
+    <Button
+      variant="outline"
+      onClick={run}
+      disabled={busy || !id || !filtrosDisponiveis}
+    >
       {busy ? <Loader2 className="animate-spin" /> : <Download />}
       Exportar Excel
     </Button>
