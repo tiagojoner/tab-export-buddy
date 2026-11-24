@@ -71,6 +71,21 @@ function erroPareceChaveInvalida(error: unknown): boolean {
   );
 }
 
+async function chavePertenceAUsuarioInativo(chave: string): Promise<boolean> {
+  const sql = getDb();
+
+  const rows = await sql<{ inativo: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM crm.usuarios u
+      WHERE u.chave_acesso = ${chave}
+        AND u.ativo = FALSE
+    ) AS inativo
+  `;
+
+  return rows[0]?.inativo === true;
+}
+
 export const identificarUsuario = createServerFn({ method: "POST" })
   .validator((data: { chave: string }) => data)
   .handler(async ({ data }) => {
@@ -89,9 +104,13 @@ export const identificarUsuario = createServerFn({ method: "POST" })
       const usuario = await buscarUsuario(chave);
 
       if (!usuario) {
+        const usuarioInativo = await chavePertenceAUsuarioInativo(chave);
+
         return {
           ok: false as const,
-          mensagem: "Chave inválida ou inativa.",
+          mensagem: usuarioInativo
+            ? "Seu acesso ao Gestor de Tabulações CRM está inativo. O período de registro das tabulações foi encerrado. Em caso de necessidade de acesso, entre em contato com a equipe responsável."
+            : "Chave inválida. Verifique os dados informados.",
         };
       }
 
@@ -103,9 +122,13 @@ export const identificarUsuario = createServerFn({ method: "POST" })
       };
     } catch (error) {
       if (erroPareceChaveInvalida(error)) {
+        const usuarioInativo = await chavePertenceAUsuarioInativo(chave);
+
         return {
           ok: false as const,
-          mensagem: "Chave inválida ou inativa.",
+          mensagem: usuarioInativo
+            ? "Seu acesso ao Gestor de Tabulações CRM está inativo. O período de registro das tabulações foi encerrado. Em caso de necessidade de acesso, entre em contato com a equipe responsável."
+            : "Chave inválida. Verifique os dados informados.",
         };
       }
 
