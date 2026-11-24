@@ -277,3 +277,64 @@ export const excluirCanalOrigemCRM = createServerFn({
 
     return { ok: true };
   });
+
+export const alterarStatusCanaisOrigensAdminCRM = createServerFn({
+  method: "POST",
+})
+  .validator((data: { ids: number[]; excluido: boolean }) => data)
+  .handler(async ({ data }) => {
+    setResponseHeader("Cache-Control", "no-store");
+
+    const chave = exigirChave();
+    const sql = getDb();
+    const ids = Array.from(
+      new Set(data.ids.filter((id) => Number.isInteger(id) && id > 0)),
+    );
+
+    if (ids.length === 0) {
+      throw new Error("Selecione pelo menos um registro.");
+    }
+
+    if (ids.length > 100) {
+      throw new Error("Selecione no máximo 100 registros por operação.");
+    }
+
+    const idsLiteral = `{${ids.join(",")}}`;
+
+    try {
+      const rows = await sql<{ quantidade: number }[]>`
+        SELECT crm.alterar_status_canais_origens_admin(
+          ${chave},
+          ${idsLiteral}::bigint[],
+          ${data.excluido}
+        ) AS quantidade
+      `;
+
+      return {
+        ok: true,
+        quantidade: Number(rows[0]?.quantidade ?? 0),
+      };
+    } catch (error) {
+      const mensagem = error instanceof Error ? error.message : String(error ?? "");
+
+      if (mensagem.includes("REATIVACAO_DUPLICADA")) {
+        throw new Error(
+          "Não foi possível reativar a seleção porque existe um Canal x Origem ativo equivalente para o mesmo usuário, ou há registros duplicados entre os selecionados.",
+        );
+      }
+
+      if (mensagem.includes("REGISTRO_STATUS_ALTERADO")) {
+        throw new Error(
+          "Um ou mais registros tiveram o status alterado. Atualize a lista e tente novamente.",
+        );
+      }
+
+      if (mensagem.includes("REGISTRO_NAO_ENCONTRADO")) {
+        throw new Error(
+          "Um ou mais registros selecionados não foram encontrados. Atualize a lista e tente novamente.",
+        );
+      }
+
+      throw error;
+    }
+  });
