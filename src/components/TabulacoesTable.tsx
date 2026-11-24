@@ -3,6 +3,7 @@
 import { Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { TabulacaoCRM } from "@/lib/crm.functions";
 
 function formatarData(value: string | null): string {
@@ -13,25 +14,65 @@ function formatarData(value: string | null): string {
 export function TabulacoesTable({
   rows,
   usuarioAtualId,
+  modoAdministrador = false,
+  permitirSelecao = false,
+  selecionados = [],
+  onSelecionadosChange,
   onExcluir,
   onEditarCriticidade,
   mostrarAuditoriaExclusao = true,
 }: {
   rows: TabulacaoCRM[];
   usuarioAtualId: number;
+  modoAdministrador?: boolean;
+  permitirSelecao?: boolean;
+  selecionados?: number[];
+  onSelecionadosChange?: (ids: number[]) => void;
   onExcluir?: (row: TabulacaoCRM) => void;
   onEditarCriticidade?: (row: TabulacaoCRM) => void;
   mostrarAuditoriaExclusao?: boolean;
 }) {
-  const larguraBase = 1810;
+  const larguraSelecao = permitirSelecao ? 52 : 0;
+  const larguraBase = 1810 + larguraSelecao;
   const larguraAuditoria = mostrarAuditoriaExclusao ? 560 : 0;
   const minWidth = larguraBase + larguraAuditoria;
+  const idsPagina = rows.map((row) => row.id_registro);
+  const selecionadosPagina = idsPagina.filter((id) => selecionados.includes(id));
+  const todosSelecionados =
+    idsPagina.length > 0 && selecionadosPagina.length === idsPagina.length;
+  const algunsSelecionados =
+    selecionadosPagina.length > 0 && selecionadosPagina.length < idsPagina.length;
+
+  function alternarTodos(checked: boolean | "indeterminate") {
+    if (!onSelecionadosChange) return;
+    onSelecionadosChange(checked === true ? idsPagina : []);
+  }
+
+  function alternarRegistro(id: number, checked: boolean | "indeterminate") {
+    if (!onSelecionadosChange) return;
+
+    if (checked === true) {
+      onSelecionadosChange(Array.from(new Set([...selecionados, id])));
+      return;
+    }
+
+    onSelecionadosChange(selecionados.filter((item) => item !== id));
+  }
 
   return (
     <div className="max-h-[62vh] w-full overflow-auto rounded-xl border bg-card">
       <table className="w-full text-[11.5px] leading-4" style={{ minWidth }}>
         <thead className="sticky top-0 z-20 bg-secondary text-left text-secondary-foreground">
           <tr>
+            {permitirSelecao && (
+              <th className="w-[52px] min-w-[52px] px-2 py-2 text-center font-medium">
+                <Checkbox
+                  checked={todosSelecionados ? true : algunsSelecionados ? "indeterminate" : false}
+                  onCheckedChange={alternarTodos}
+                  aria-label="Selecionar todos os registros desta página"
+                />
+              </th>
+            )}
             <th className="w-[120px] min-w-[120px] px-2 py-2 font-medium">
               Tipo
             </th>
@@ -84,7 +125,8 @@ export function TabulacoesTable({
         <tbody>
           {rows.map((row) => {
             const registroProprio = row.usuario_id === usuarioAtualId;
-            const podeExcluir = !row.excluido && registroProprio && onExcluir;
+            const podeExcluir =
+              !modoAdministrador && !row.excluido && registroProprio && onExcluir;
             const podeEditar =
               !row.excluido && registroProprio && onEditarCriticidade;
 
@@ -97,6 +139,17 @@ export function TabulacoesTable({
                     : "border-t bg-card align-top"
                 }
               >
+                {permitirSelecao && (
+                  <td className="px-2 py-2 text-center">
+                    <Checkbox
+                      checked={selecionados.includes(row.id_registro)}
+                      onCheckedChange={(checked) =>
+                        alternarRegistro(row.id_registro, checked)
+                      }
+                      aria-label={`Selecionar registro ${row.id_registro}`}
+                    />
+                  </td>
+                )}
                 <td className="px-2 py-2">{row.tipo_ocorrencia}</td>
                 <td className="px-2 py-2">{row.area_interesse}</td>
                 <td className="px-2 py-2">{row.assunto}</td>
