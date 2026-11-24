@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { CheckboxMultiSelect } from "@/components/CheckboxMultiSelect";
-import { SearchSelect } from "@/components/SearchSelect";
+import { SearchSelect, SearchTextSelect } from "@/components/SearchSelect";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -139,17 +139,22 @@ function ListaCadastro({
             />
           </div>
 
-          <label className="space-y-1 text-sm">
-            <span className="text-xs font-medium text-muted-foreground">Status</span>
-            <select
-              className="block h-10 min-w-32 rounded-md border border-input bg-card px-3 text-sm"
+          <div className="w-full space-y-1 sm:w-40">
+            <Label className="text-xs font-medium text-muted-foreground">
+              Status
+            </Label>
+            <SearchTextSelect
+              placeholder="Status"
+              options={[
+                { id: "ativos", nome: "Ativos" },
+                { id: "inativos", nome: "Inativos" },
+              ]}
               value={status}
-              onChange={(event) => onStatus(event.target.value as StatusCadastro)}
-            >
-              <option value="ativos">Ativos</option>
-              <option value="inativos">Inativos</option>
-            </select>
-          </label>
+              onChange={(value) =>
+                onStatus((value ?? "ativos") as StatusCadastro)
+              }
+            />
+          </div>
         </div>
 
         <Button onClick={() => onNovo(cadastro)}>
