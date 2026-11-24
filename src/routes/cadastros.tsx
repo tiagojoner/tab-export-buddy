@@ -54,6 +54,8 @@ type Edicao = {
   item: CadastroAdminItem | null;
 };
 
+type StatusCadastro = "ativos" | "inativos";
+
 function normalizar(value: string) {
   return value
     .normalize("NFD")
@@ -108,6 +110,8 @@ function ListaCadastro({
   items,
   busca,
   onBusca,
+  status,
+  onStatus,
   onNovo,
   onEditar,
 }: {
@@ -115,6 +119,8 @@ function ListaCadastro({
   items: CadastroAdminItem[];
   busca: string;
   onBusca: (value: string) => void;
+  status: StatusCadastro;
+  onStatus: (value: StatusCadastro) => void;
   onNovo: (cadastro: CadastroAdminTipo) => void;
   onEditar: (cadastro: CadastroAdminTipo, item: CadastroAdminItem) => void;
 }) {
@@ -123,12 +129,28 @@ function ListaCadastro({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input
-          value={busca}
-          onChange={(event) => onBusca(event.target.value)}
-          placeholder={`Buscar ${rotulo}...`}
-          className="max-w-md"
-        />
+        <div className="flex w-full flex-wrap items-end gap-3 sm:w-auto">
+          <div className="w-full sm:w-[360px]">
+            <Label className="sr-only">Buscar {rotulo}</Label>
+            <Input
+              value={busca}
+              onChange={(event) => onBusca(event.target.value)}
+              placeholder={`Buscar ${rotulo}...`}
+            />
+          </div>
+
+          <label className="space-y-1 text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Status</span>
+            <select
+              className="block h-10 min-w-32 rounded-md border border-input bg-card px-3 text-sm"
+              value={status}
+              onChange={(event) => onStatus(event.target.value as StatusCadastro)}
+            >
+              <option value="ativos">Ativos</option>
+              <option value="inativos">Inativos</option>
+            </select>
+          </label>
+        </div>
 
         <Button onClick={() => onNovo(cadastro)}>
           <Plus />
@@ -260,6 +282,10 @@ function Cadastros({ id }: { id: Identidade }) {
   const [buscaAssunto, setBuscaAssunto] = useState("");
   const [buscaSubassunto, setBuscaSubassunto] = useState("");
   const [buscaDetalhe, setBuscaDetalhe] = useState("");
+  const [statusAssunto, setStatusAssunto] = useState<StatusCadastro>("ativos");
+  const [statusSubassunto, setStatusSubassunto] =
+    useState<StatusCadastro>("ativos");
+  const [statusDetalhe, setStatusDetalhe] = useState<StatusCadastro>("ativos");
 
   const [edicao, setEdicao] = useState<Edicao | null>(null);
   const [nomeEdicao, setNomeEdicao] = useState("");
@@ -352,24 +378,36 @@ function Cadastros({ id }: { id: Identidade }) {
 
   const assuntosFiltrados = useMemo(() => {
     const termo = normalizar(buscaAssunto.trim());
-    return termo
-      ? assuntos.filter((item) => normalizar(item.nome).includes(termo))
-      : assuntos;
-  }, [assuntos, buscaAssunto]);
+    const ativo = statusAssunto === "ativos";
+
+    return assuntos.filter(
+      (item) =>
+        item.ativo === ativo &&
+        (!termo || normalizar(item.nome).includes(termo)),
+    );
+  }, [assuntos, buscaAssunto, statusAssunto]);
 
   const subassuntosFiltrados = useMemo(() => {
     const termo = normalizar(buscaSubassunto.trim());
-    return termo
-      ? subassuntos.filter((item) => normalizar(item.nome).includes(termo))
-      : subassuntos;
-  }, [subassuntos, buscaSubassunto]);
+    const ativo = statusSubassunto === "ativos";
+
+    return subassuntos.filter(
+      (item) =>
+        item.ativo === ativo &&
+        (!termo || normalizar(item.nome).includes(termo)),
+    );
+  }, [subassuntos, buscaSubassunto, statusSubassunto]);
 
   const detalhesFiltrados = useMemo(() => {
     const termo = normalizar(buscaDetalhe.trim());
-    return termo
-      ? detalhes.filter((item) => normalizar(item.nome).includes(termo))
-      : detalhes;
-  }, [detalhes, buscaDetalhe]);
+    const ativo = statusDetalhe === "ativos";
+
+    return detalhes.filter(
+      (item) =>
+        item.ativo === ativo &&
+        (!termo || normalizar(item.nome).includes(termo)),
+    );
+  }, [detalhes, buscaDetalhe, statusDetalhe]);
 
   if (id.perfil !== "ADMINISTRADOR") {
     return (
@@ -561,6 +599,8 @@ function Cadastros({ id }: { id: Identidade }) {
             items={assuntosFiltrados}
             busca={buscaAssunto}
             onBusca={setBuscaAssunto}
+            status={statusAssunto}
+            onStatus={setStatusAssunto}
             onNovo={abrirNovo}
             onEditar={abrirEdicao}
           />
@@ -572,6 +612,8 @@ function Cadastros({ id }: { id: Identidade }) {
             items={subassuntosFiltrados}
             busca={buscaSubassunto}
             onBusca={setBuscaSubassunto}
+            status={statusSubassunto}
+            onStatus={setStatusSubassunto}
             onNovo={abrirNovo}
             onEditar={abrirEdicao}
           />
@@ -583,6 +625,8 @@ function Cadastros({ id }: { id: Identidade }) {
             items={detalhesFiltrados}
             busca={buscaDetalhe}
             onBusca={setBuscaDetalhe}
+            status={statusDetalhe}
+            onStatus={setStatusDetalhe}
             onNovo={abrirNovo}
             onEditar={abrirEdicao}
           />
