@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  alterarStatusCanaisOrigensAdminCRM,
   excluirCanalOrigemCRM,
   listarTodosCanaisOrigensCRM,
   type CanalOrigemRegistradoCRM,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/canal-origem.functions";
 import { carregarCadastros } from "@/lib/cadastros";
 import {
+  alterarStatusTabulacoesAdminCRM,
   atualizarCriticidadeTabulacaoCRM,
   excluirTabulacaoCRM,
   listarTabulacoesCRM,
@@ -83,8 +85,14 @@ const filtrosCanalOrigemIniciais: FiltrosCanalOrigemCRM = {
   status: "ativas",
 };
 
+type AcaoLoteAdmin = {
+  tipo: "classificacao" | "canal-origem";
+  acao: "inativar" | "reativar";
+};
+
 function Registros({ id }: { id: Identidade }) {
   const queryClient = useQueryClient();
+  const administrador = id.perfil === "ADMINISTRADOR";
   const [view, setView] = useState<"classificacao" | "canal-origem">("classificacao");
   const [filtrosClassificacao, setFiltrosClassificacao] =
     useState<FiltrosTabulacoesCRM>(filtrosClassificacaoIniciais);
@@ -97,6 +105,15 @@ function Registros({ id }: { id: Identidade }) {
   const [delCanalOrigem, setDelCanalOrigem] =
     useState<CanalOrigemRegistradoCRM | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [selecionadosClassificacao, setSelecionadosClassificacao] = useState<
+    number[]
+  >([]);
+  const [selecionadosCanalOrigem, setSelecionadosCanalOrigem] = useState<
+    number[]
+  >([]);
+  const [acaoLoteAdmin, setAcaoLoteAdmin] = useState<AcaoLoteAdmin | null>(null);
+  const [processandoLoteAdmin, setProcessandoLoteAdmin] = useState(false);
 
   const [editando, setEditando] = useState<TabulacaoCRM | null>(null);
   const [criticidadeEdicao, setCriticidadeEdicao] = useState<number | null>(null);
@@ -146,6 +163,11 @@ function Registros({ id }: { id: Identidade }) {
   useEffect(() => {
     setPage(0);
   }, [view, filtrosClassificacao, filtrosCanalOrigem, pageSize]);
+
+  useEffect(() => {
+    setSelecionadosClassificacao([]);
+    setSelecionadosCanalOrigem([]);
+  }, [view, filtrosClassificacao, filtrosCanalOrigem, page, pageSize]);
 
   const usuarios = useMemo(
     () =>
@@ -220,6 +242,60 @@ function Registros({ id }: { id: Identidade }) {
     }
   }
 
+  async function executarAcaoLoteAdmin() {
+    if (!acaoLoteAdmin) return;
+
+    const ids =
+      acaoLoteAdmin.tipo === "classificacao"
+        ? selecionadosClassificacao
+        : selecionadosCanalOrigem;
+
+    if (ids.length === 0) return;
+
+    setProcessandoLoteAdmin(true);
+
+    try {
+      const excluido = acaoLoteAdmin.acao === "inativar";
+      const resultado =
+        acaoLoteAdmin.tipo === "classificacao"
+          ? await alterarStatusTabulacoesAdminCRM({
+              data: { ids, excluido },
+            })
+          : await alterarStatusCanaisOrigensAdminCRM({
+              data: { ids, excluido },
+            });
+
+      const rotulo =
+        acaoLoteAdmin.tipo === "classificacao"
+          ? resultado.quantidade === 1
+            ? "Classificação"
+            : "Classificações"
+          : resultado.quantidade === 1
+            ? "registro de Canal e Origem"
+            : "registros de Canal e Origem";
+
+      toast.success(
+        `${resultado.quantidade} ${rotulo} ${
+          excluido ? "inativado(s)" : "reativado(s)"
+        } com sucesso.`,
+      );
+
+      setSelecionadosClassificacao([]);
+      setSelecionadosCanalOrigem([]);
+      setAcaoLoteAdmin(null);
+      await invalidarDados();
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível alterar os registros selecionados.",
+      );
+    } finally {
+      setProcessandoLoteAdmin(false);
+    }
+  }
+
   function abrirEdicaoCriticidade(row: TabulacaoCRM) {
     const atual = cadastros.data?.criticidade.find(
       (item) => item.nome === row.criticidade,
@@ -272,6 +348,16 @@ function Registros({ id }: { id: Identidade }) {
   const queryAtual = view === "classificacao" ? classificacoes : canaisOrigens;
   const total = queryAtual.data?.count ?? 0;
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const statusAtual =
+    view === "classificacao"
+      ? filtrosClassificacao.status
+      : filtrosCanalOrigem.status;
+  const selecionadosAtuais =
+    view === "classificacao"
+      ? selecionadosClassificacao
+      : selecionadosCanalOrigem;
+  const permiteAcaoLote = administrador && statusAtual !== "todas";
+  const acaoLoteAtual = statusAtual === "excluidas" ? "reativar" : "inativar";
 
   useEffect(() => {
     if (page > 0 && page >= pages) {
@@ -483,6 +569,37 @@ function Registros({ id }: { id: Identidade }) {
         </label>
       </div>
 
+      {administrador && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-sm">
+          {statusAtual === "todas" ? (
+            <span className="text-muted-foreground">
+              Para gerenciar registros em lote, filtre o Status por Ativas ou Inativas.
+            </span>
+          ) : (
+            <>
+              <span className="text-muted-foreground">
+                {selecionadosAtuais.length} registro(s) selecionado(s) nesta página.
+              </span>
+              <Button
+                variant={acaoLoteAtual === "inativar" ? "destructive" : "default"}
+                size="sm"
+                disabled={!permiteAcaoLote || selecionadosAtuais.length === 0}
+                onClick={() =>
+                  setAcaoLoteAdmin({
+                    tipo: view,
+                    acao: acaoLoteAtual,
+                  })
+                }
+              >
+                {acaoLoteAtual === "inativar"
+                  ? `Inativar selecionados (${selecionadosAtuais.length})`
+                  : `Ativar selecionados (${selecionadosAtuais.length})`}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {queryAtual.isLoading ? (
         <div className="flex justify-center rounded-xl border bg-card py-20">
           <Loader2 className="animate-spin text-primary" />
@@ -495,6 +612,10 @@ function Registros({ id }: { id: Identidade }) {
         <TabulacoesTable
           rows={classificacoes.data.rows}
           usuarioAtualId={id.usuarioId}
+          modoAdministrador={administrador}
+          permitirSelecao={administrador && filtrosClassificacao.status !== "todas"}
+          selecionados={selecionadosClassificacao}
+          onSelecionadosChange={setSelecionadosClassificacao}
           onExcluir={setDelClassificacao}
           onEditarCriticidade={abrirEdicaoCriticidade}
         />
@@ -502,6 +623,10 @@ function Registros({ id }: { id: Identidade }) {
         <CanaisOrigensTable
           rows={canaisOrigens.data.rows}
           usuarioAtualId={id.usuarioId}
+          modoAdministrador={administrador}
+          permitirSelecao={administrador && filtrosCanalOrigem.status !== "todas"}
+          selecionados={selecionadosCanalOrigem}
+          onSelecionadosChange={setSelecionadosCanalOrigem}
           onExcluir={setDelCanalOrigem}
         />
       ) : (
@@ -573,6 +698,40 @@ function Registros({ id }: { id: Identidade }) {
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={excluirCanalOrigem} disabled={deleting}>
               {deleting ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!acaoLoteAdmin}
+        onOpenChange={(open) => !open && setAcaoLoteAdmin(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {acaoLoteAdmin?.acao === "inativar" ? "Inativar" : "Ativar"}{" "}
+              {selecionadosAtuais.length} registro(s)?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {acaoLoteAdmin?.acao === "inativar"
+                ? "Os registros selecionados serão marcados como inativos. A exclusão é lógica e preserva o usuário e a data de criação."
+                : "Os registros selecionados voltarão a ficar ativos. Os dados de exclusão serão removidos e o usuário e a data de criação originais serão preservados."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={processandoLoteAdmin}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={executarAcaoLoteAdmin}
+              disabled={processandoLoteAdmin || selecionadosAtuais.length === 0}
+            >
+              {processandoLoteAdmin
+                ? "Processando..."
+                : acaoLoteAdmin?.acao === "inativar"
+                  ? "Confirmar inativação"
+                  : "Confirmar ativação"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
